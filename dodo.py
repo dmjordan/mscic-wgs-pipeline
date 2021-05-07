@@ -600,7 +600,7 @@ def task_lof_filter():
     }
 
 
- def task_build_seq_gds():
+def task_build_seq_gds():
     for name, mtfile in vcf_endpoints.items():
         gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
         output_gds = mtfile.with_suffix(".seq.gds")
@@ -609,7 +609,7 @@ def task_lof_filter():
             "actions":  [wrap_r_function("build_seq_gds")],
             "file_dep": [gds_shards_dir],
             "targets":  [output_gds],
-            "setup":    ["start_r_cluster"]
+            "setup":    ["initialize_r"]
             }
 
 
