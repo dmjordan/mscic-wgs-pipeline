@@ -1,0 +1,20 @@
+name: "mscic-wgs"
+channels:
+    - bioconda
+    - "conda-forge"
+dependencies:
+    - hail
+    - rpy2 >= 3.3
+    - doit
+    - pandas >= 1.0
+    - seaborn
+    - scipy
+    - scikit-learn
+    - r-base
+    - r-essentials
+    - r-doparallel
+    - r-foreach
+    - jupyter
+    - bioconductor-gwastools
+    - bioconductor-seqvartools
+    - bioconductor-genesis

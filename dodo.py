@@ -1,0 +1,823 @@
+import sys, os, re, subprocess, socket, sysconfig, shutil, shlex, itertools, warnings, inspect
+import attr, more_itertools
+from typing import Union
+from pathlib import Path
+from doit.dependency import MD5Checker
+from doit.task import clean_targets
+from doit import create_after
+import doit.globals
+import hail as hl
+from rpy2.robjects import r
+import rpy2.robjects as ro
+import rpy2.rinterface as ri
+from decorator import decorate
+import logging
+
+logger = logging.getLogger()
+#logger.setLevel(logging.DEBUG)
+
+scriptsdir = Path("../../scripts/WGS/").resolve()
+sys.path.append(str(scriptsdir))
+import build_design_matrix, race_prediction, hail_wgs, covariate_selection
+
+num_cpus = len(os.sched_getaffinity(0))
+
+
+@ro.conversion.py2rpy.register(Path)
+def convert_path(path):
+    return ro.StrVector([str(path.resolve())])
+
+
+@ro.conversion.rpy2py.register(ri.BoolSexpVector)
+@ro.conversion.rpy2py.register(ri.FloatSexpVector)
+@ro.conversion.rpy2py.register(ri.IntSexpVector)
+def unpack_return_value(vector):
+    if len(vector) == 1:
+        value = vector[0]
+        if bool(value) == value:
+            return bool(value)
+        try:
+            if int(value) == value:
+                return int(value)
+        except ValueError:
+            pass
+        return value
+    return vector
+
+
+# @ro.conversion.rpy2py.register(ri.NULLType)
+# def none_factory(null):
+#    return None
+
+
+def wrap_r_function(funcname):
+    pyfuncname = funcname.replace(".", "_")
+    return ro.functions.wrap_r_function(r[funcname], pyfuncname)
+
+
+r.source(scriptsdir / "seqarray_genesis.R")
+
+# binary_phenotypes=["ever_covid", "covid_encounter", "ever_icu", "deceased", "recovered", "discharged", "recovered_not_deceased", "deceased_vs_recovered", "deceased_vs_discharged", "sofa_ever_decreased", "sofa_ever_increased", "who_ever_decreased", "who_ever_increased", "severity_ever_decreased", "severity_ever_increased", "severity_ever_decreased_counting_discharge", "severity_ever_increased_counting_death"]
+# continuous_phenotypes=["icu_hours_cumulative", "max_sofa", "max_who", "max_who_minus_death", "highest_titer", "highest_titer_agm_only", "days_onset_to_encounter", "days_onset_to_icu", "days_encounter_to_icu", "covid_encounter_days"]
+# all_phenotypes = (binary_phenotypes +
+#                      continuous_phenotypes +
+#                      [phenotype + "_irnt" for phenotype in continuous_phenotypes] +
+#                      [phenotype + "_percentile" for phenotype in continuous_phenotypes] +
+#                      [phenotype + "_log" for phenotype in continuous_phenotypes])
+
+vcf_path = Path('/sc/arion/projects/mscic1/techdev.incoming/DNA/all_625_samples_cohort_vcf/625_Samples.cohort.vcf.gz')
+
+mt_path = Path(vcf_path.stem).with_suffix(".mt")
+qc_path = mt_path.with_suffix(".QC_filtered.mt")
+sample_matched_path = qc_path.with_suffix(".sample_matched.mt")
+vep_path = sample_matched_path.with_suffix(".VEP.mt")
+lof_filtered_path = vep_path.with_suffix(".LOF_filtered.mt")
+gwas_filtered_path = sample_matched_path.with_suffix(".GWAS_filtered.mt")
+ld_pruned_path = gwas_filtered_path.with_suffix(".LD_pruned.mt")
+white_only_path = sample_matched_path.with_suffix(".WHITE_only.mt")
+black_only_path = sample_matched_path.with_suffix(".BLACK_only.mt")
+asian_only_path = sample_matched_path.with_suffix(".ASIAN_only.mt")
+hispanic_only_path = sample_matched_path.with_suffix(".HISPANIC_only.mt")
+white_gwas_path = white_only_path.with_suffix(".GWAS_filtered.mt")
+black_gwas_path = black_only_path.with_suffix(".GWAS_filtered.mt")
+asian_gwas_path = asian_only_path.with_suffix(".GWAS_filtered.mt")
+hispanic_gwas_path = hispanic_only_path.with_suffix(".GWAS_filtered.mt")
+white_ld_path = ld_pruned_path.with_suffix(".WHITE_only.mt")
+black_ld_path = ld_pruned_path.with_suffix(".BLACK_only.mt")
+asian_ld_path = ld_pruned_path.with_suffix(".ASIAN_only.mt")
+hispanic_ld_path = ld_pruned_path.with_suffix(".HISPANIC_only.mt")
+
+vcf_endpoints = {"full": sample_matched_path,
+                 "lof": lof_filtered_path,
+                 "gwas": gwas_filtered_path,
+                 "ld": ld_pruned_path,
+                 "white_full": white_only_path,
+                 "black_full": black_only_path,
+                 "hispanic_full": hispanic_only_path,
+                 "asian_full": asian_only_path,
+                 "white_gwas": white_gwas_path,
+                 "black_gwas": black_gwas_path,
+                 "hispanic_gwas": hispanic_gwas_path,
+                 "asian_gwas": asian_gwas_path,
+                 "white_ld": white_ld_path,
+                 "black_ld": black_ld_path,
+                 "hispanic_ld": hispanic_ld_path,
+                 "asian_ld": asian_ld_path}
+
+covariates_path = Path(
+    "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/Biobank_clinical_data_table_by_blood_sample_deidentified_UNCONSENTED.csv.gz")
+design_matrix_path = Path(
+    "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv")
+
+traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
+        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased", 
+        "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
+
+class MD5DirectoryChecker(MD5Checker):
+    """Just like the default MD5Checker, but works for directories too.
+    For directories it recursively checks every file in the directory.
+    If it's a file, defaults to MD5Checker behavior."""
+
+    def check_modified(self, file_path, file_stat, state):
+        if os.path.isfile(file_path):
+            return super().check_modified(file_path, file_stat, state)
+        for dirpath, dirnames, filenames in os.walk(file_path):
+            for filename in filenames:
+                child_path = os.path.join(dirpath, filename)
+                child_file_stat = os.stat(child_path)
+                try:
+                    child_state = state[child_path]
+                except KeyError:
+                    return True
+                if super().check_modified(child_path, child_file_stat, child_state):
+                    return True
+        return False
+
+    def get_state(self, dep, current_state):
+        if os.path.isfile(dep):
+            return super().get_state(dep, current_state)
+        new_state = {}
+        for dirpath, dirnames, filenames in os.walk(dep):
+            for filename in filenames:
+                child_path = os.path.join(dirpath, filename)
+                current_child_state = current_state if current_state is None else current_state.get(child_path)
+                new_state[child_path] = super().get_state(child_path, current_child_state) or current_state[child_path]
+        return new_state
+
+
+DOIT_CONFIG = {'check_file_uptodate': MD5DirectoryChecker,
+               'default_tasks': ['gwas_plots', 'race_prediction'] +
+                                [f'build_vcf:{race}_full' for race in ("white", "black", "asian", "hispanic")]
+               }
+
+
+@attr.s(auto_attribs=True)
+class bsub:
+    basename: str = None
+    time: str = "12:00"
+    mem: str = "8G"
+    cpus: str = attr.ib(default="1", converter=str)
+    himem: bool = False
+    queue: str = "premium"
+    project: str = "acc_mscic"
+
+    def do_bsub(self, cmd, job_name):
+        himem_flag = "-R himem" if self.himem else ""
+        bsub_command = f"bsub -q {self.queue} -P {self.project} -W {self.time} -n {self.cpus} -R rusage[mem={self.mem}] {himem_flag} -J {job_name} -oo {job_name}.%J.log"
+        if isinstance(cmd, Path):
+            output = subprocess.check_output(bsub_command + " < " + str(cmd), shell=True, text=True)
+        else:
+            output = subprocess.check_output(bsub_command + " " + shlex.quote(cmd), shell=True, text=True)
+        match = re.match(r"^Job <(\d+)> is submitted to queue <\w+>.$", output)
+        self.job_id = match.group(1)
+        return { 'job_id': self.job_id }
+
+    def do_bwait(self, job_name, job_id):
+        if subprocess.call(["bwait", "-w", f"done({job_id})"]) != 0:
+            # check if there's a log file with success
+            # this happens when it's been too long between submission and retrieval
+            try:
+                with open(f"{job_name}.{job_id}.log") as logfile:
+                    header_line = logfile.readline()
+                    status_line = logfile.readline()
+                    if not status_line.strip().endswith("Done"):
+                        return False
+            except IOError:
+                return False
+        return { 'last_succeeded': job_id }
+
+    def do_bkill(self, job_id):
+        bjobs_output = subprocess.check_output(f"bjobs {job_id}", shell=True, text=True)
+        if bjobs_output.strip() != f"Job <{job_id}> is not found":
+            subprocess.call(f"bkill {job_id}", shell=True)
+
+    def bsubify_tasks(self, f, *args, **kwargs):
+        for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
+            if task_dict["actions"] is None:
+                yield task_dict
+                continue
+
+            basename = task_dict.get("basename", self.basename)
+            task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
+            bsub_task = {   
+                            "basename": f"bsub_{basename}",
+                            "actions": [(self.do_bsub, [" ; ".join(task_dict["actions"]), task_name])]   
+                        }
+            if "name" in task_dict:
+                bsub_task["name"] = task_dict["name"]
+            yield bsub_task
+
+            bwait_task = task_dict.copy() 
+            bwait_task.update({
+                'basename': basename,
+                'actions':  [(self.do_bwait, [task_name])],
+                'getargs':  {'job_id': (f"bsub_{task_name}", 'job_id')},
+                'setup':    [f"bsub_{task_name}"],
+                'teardown': [self.do_bkill]
+            })
+            yield bwait_task
+
+    def __call__(self, f):
+        return decorate(f, self.bsubify_tasks)
+
+
+def task_initialize_hail():
+    logger.debug("creating initialize_hail task")
+    os.environ["HAIL_HOME"] = str(Path(sysconfig.get_path("purelib")) / "hail")
+    if "LSB_JOBID" in os.environ:
+        hostname = socket.gethostname()
+        os.environ["SPARK_LOG_DIR"] = str(Path("../../scratch/hail/logs/").resolve())
+        os.environ["SPARK_WORKER_DIR"] = str(Path("../../scratch/hail/worker/").resolve())
+        os.environ["SPARK16ASTER"] = socket.gethostname()
+        os.environ["SPARK_MASTER_PORT"] = "6311"
+        os.environ["SPARK_PID_DIR"] = f"/tmp/{os.environ['LSB_JOBID']}_{os.environ['LSB_JOBINDEX']}"
+        os.environ["SPARK_WORKER_MEMORY"] = "20G"
+        os.environ["SPARK_DAEMON_MEMORY"] = "20G"
+        return {"actions": ["lsf-start-spark.sh",
+                            (hail_wgs.start_hail, [f"spark://{hostname}:6311"])],
+                "teardown": ["lsf-stop-spark.sh", hl.stop]
+                }
+    else:
+        return {
+            "actions": [(hail_wgs.start_hail, [f"local[{num_cpus}]"])],
+            "teardown": [hl.stop]
+        }
+
+
+def clean_dir_targets(task):
+    for target in task.targets:
+        target = Path(target)
+        if target.exists():
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                warnings.warn(f"clean_dir_targets found target {target!s} still existing, but it is not a directory")
+
+
+def task_vcf2mt():
+    logger.debug("creating vcf2mt task")
+    return {
+        "actions": [(hail_wgs.convert_vcf_to_mt, [vcf_path, mt_path])],
+        "targets": [mt_path],
+        "file_dep": [vcf_path],
+        "setup": ["initialize_hail"],
+        "clean": [clean_dir_targets]
+    }
+
+
+def task_qc():
+    logger.debug("creating qc task")
+    return {
+        "actions": [(hail_wgs.run_hail_qc, [mt_path])],
+        "targets": [qc_path,
+                    mt_path.with_suffix(".sample_qc.callrate_hist.png"),
+                    mt_path.with_suffix(".sample_qc.gq_hist.png"),
+                    mt_path.with_suffix(".sample_qc.dp_hist.png"),
+                    mt_path.with_suffix(".sample_qc.dp_v_callrate_scatter.png"),
+                    mt_path.with_suffix(".variant_qc.callrate_hist.png"),
+                    mt_path.with_suffix(".variant_qc.gq_hist.png"),
+                    mt_path.with_suffix(".variant_qc.dp_hist.png"),
+                    mt_path.with_suffix(".variant_qc.dp_v_callrate_scatter.png")],
+        "file_dep": [mt_path],
+        "setup": ["initialize_hail"],
+        "clean": [clean_targets, clean_dir_targets]
+    }
+
+
+def task_match_samples():
+    logger.debug("creating match_samples task")
+    return {
+        "actions": [(hail_wgs.match_samples, [covariates_path, qc_path])],
+        "targets": [sample_matched_path],
+        "file_dep": [covariates_path, qc_path],
+        "setup": ["initialize_hail"],
+        "clean": [clean_dir_targets]
+    }
+
+
+def task_mt2plink():
+    logger.debug("creating mt2plink tasks")
+    for endpoint_name, endpoint_mtfile in vcf_endpoints.items():
+        for name, mtfile in [(f"{endpoint_name}_chr{chrom}", endpoint_mtfile.with_suffix(f".chr{chrom}.mt")) for chrom in list(range(1,23)) + ["X"]] + [(endpoint_name, endpoint_mtfile)]:
+            logger.debug(f"creating mt2plink:{name} subtask")
+            yield {
+                "name": name,
+                "actions": [(hail_wgs.convert_mt_to_plink, [mtfile]),
+                            [Path("/usr/bin/sed"),
+                             "-i", "s/^chr//", mtfile.with_suffix(".bim")]],
+                "file_dep": [mtfile],
+                "targets": [mtfile.with_suffix(".bed"),
+                            mtfile.with_suffix(".bim"),
+                            mtfile.with_suffix(".fam")],
+                "setup": ["initialize_hail"],
+                "clean": True
+            }
+
+
+def task_king():
+    logger.debug("creating king task")
+    return {
+        "actions": ["ml king && king "
+                    f'-b {sample_matched_path.with_suffix(".bed")} '
+                    f'--kinship --cpus {num_cpus} '
+                    f'--prefix {sample_matched_path.with_suffix("")}'],
+        "file_dep": [sample_matched_path.with_suffix(".bed"),
+                     sample_matched_path.with_suffix(".bim"),
+                     sample_matched_path.with_suffix(".fam")],
+        "targets": [sample_matched_path.with_suffix(".kin0"),
+                    str(sample_matched_path.with_suffix("")) + "X.kin",
+                    # pathlib can't handle a suffix that doesn't start with .
+                    str(sample_matched_path.with_suffix("")) + "X.kin0"],
+        "clean": True
+    }
+
+
+def task_gwas_filter():
+    logger.debug("creating gwas_filter tasks")
+    for subset, input_path in [("all", sample_matched_path),
+                               ("white", white_only_path),
+                               ("black", black_only_path),
+                               ("hispanic", hispanic_only_path),
+                               ("asian", asian_only_path)]:
+        logger.debug(f"creating gwas_filter:{subset} subtask")
+        yield {
+            "name": subset,
+            "actions": [(hail_wgs.gwas_filter, [input_path])],
+            "file_dep": [input_path],
+            "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
+            "setup": ["initialize_hail"],
+            "clean": [clean_dir_targets]
+        }
+
+
+def task_ld_prune():
+    logger.debug("creating ld_prune tasks")
+    for subset, input_path in [("all", gwas_filtered_path),
+                               ("white", white_gwas_path),
+                               ("black", black_gwas_path),
+                               ("hispanic", hispanic_gwas_path),
+                               ("asian", asian_gwas_path)]:
+        logger.debug(f"creating ld_prune:{subset} subtask")
+        yield {
+            "name": subset,
+            "actions": [(hail_wgs.ld_prune, [input_path])],
+            "file_dep": [input_path],
+            "targets": [input_path.with_suffix(".LD_pruned.mt")],
+            "setup": ["initialize_hail"],
+            "clean": [clean_dir_targets]
+        }
+
+
+def initialize_r():
+    r.start_cluster()
+
+
+def task_initialize_r():
+    logger.debug("creating initialize_r task")
+    return {
+        "actions": [wrap_r_function("start_cluster")],
+        "teardown": [wrap_r_function("stop_cluster")]
+    }
+
+
+def task_build_snp_gds():
+    logger.debug("creating build_snp_gds tasks")
+    for name, mtfile in vcf_endpoints.items():
+        logger.debug(f"creating build_snp_gds:{name} subtask")
+        output_gds = mtfile.with_suffix(".snp.gds")
+        yield {
+            "name": name,
+            "actions": [(wrap_r_function("build_snp_gds"), [mtfile.with_suffix("")])],
+            "file_dep": [mtfile.with_suffix(".bed"),
+                         mtfile.with_suffix(".bim"),
+                         mtfile.with_suffix(".fam")],
+            "targets": [output_gds],
+            "setup": ["initialize_r"],
+            "clean": True
+        }
+
+
+def task_pcair():
+    logger.debug("creating pcair tasks")
+    for race, inpath, outpath in [("all", ld_pruned_path, sample_matched_path),
+                                  ("white", white_ld_path, white_only_path),
+                                  ("black", black_ld_path, black_only_path),
+                                  ("hispanic", hispanic_ld_path, hispanic_only_path),
+                                  ("asian", asian_ld_path, asian_only_path)]:
+        logger.debug(f"creating pcair:{race} subtask")
+        yield {
+            "name": race,
+            "actions": [(wrap_r_function("run_pcair"), [inpath.with_suffix(".snp.gds"), outpath.with_suffix("")])],
+            "targets": [outpath.with_suffix(".PCAir.RDS"),
+                        outpath.with_suffix(".PCAir.txt")] +
+                       [outpath.with_suffix(f".PC{i}v{j}.pdf")
+                        for i, j in itertools.combinations(range(1, 11), 2)],
+            "file_dep": [inpath.with_suffix(".snp.gds"),
+                         sample_matched_path.with_suffix(".kin0")],
+            "setup": ["initialize_r"],
+            "clean": True
+        }
+
+
+def task_race_prediction():
+    logger.debug("creating race_prediction task")
+    return {"actions": [race_prediction.predict_races],
+            "targets": [sample_matched_path.with_suffix(".race_and_PCA.csv"),
+                        "WHITE.indiv_list.txt",
+                        "BLACK.indiv_list.txt",
+                        "ASIAN.indiv_list.txt",
+                        "HISPANIC.indiv_list.txt"] +
+                       [sample_matched_path.with_suffix(f".PC{i}v{j}.predicted_races.pdf")
+                        for i, j in itertools.combinations(range(1, 11), 2)],
+            "file_dep": [covariates_path, sample_matched_path.with_suffix(".PCAir.txt")],
+            "clean": True
+            }
+
+
+def task_split_races():
+    logger.debug("creating split_races tasks")
+    for name, mtfile in [("full", sample_matched_path),
+                         ("ld", ld_pruned_path)]:
+        for race in ("WHITE", "BLACK", "HISPANIC", "ASIAN"):
+            logger.debug(f"creating split_races:{race.lower()}_{name} subtask")
+            listfile = f"{race}.indiv_list.txt"
+            outfile = mtfile.with_suffix(f".{race}_only.mt")
+            yield {
+                "name": f"{race.lower()}_{name}",
+                "actions": [(hail_wgs.subset_mt_samples, [mtfile, listfile, outfile])],
+                "file_dep": [mtfile, listfile],
+                "targets": [outfile],
+                "setup": ["initialize_hail"],
+                "clean": [clean_dir_targets]
+            }
+
+
+def task_design_matrix():
+    logger.debug("creating design_matrix task")
+    return {
+        "actions": [(build_design_matrix.build_design_matrix, [covariates_path, design_matrix_path])],
+        "targets": [design_matrix_path],
+        "file_dep": [covariates_path, "flowcells.csv", sample_matched_path.with_suffix(".PCAir.txt"),
+                     "MSCIC_blood_viral_load_predictions.csv", scriptsdir / "build_design_matrix.py"],
+        "clean": ["rm {design_matrix_path!s} *.dist.png"]
+    }
+
+
+def get_phenotypes_list():
+    #return doit.globals.Globals.dep_manager.get_value("design_matrix", "phenotypes")
+    return build_design_matrix.all_phenotypes
+
+
+def task_pcrelate():
+    logger.debug("creating pcrelate task")
+    return {
+        "actions": [(wrap_r_function("run_pcrelate"), [sample_matched_path.with_suffix("")])],
+        "targets": [sample_matched_path.with_suffix(".PCRelate.RDS")],
+        "file_dep": [ld_pruned_path.with_suffix(".snp.gds"),
+                     sample_matched_path.with_suffix(".PCAir.RDS")],
+        "setup": ["initialize_r"],
+        "clean": True
+    }
+
+
+def task_mt2vcfshards():
+    logger.debug("creating mt2vcfshards tasks")
+    for name, mtfile in vcf_endpoints.items():
+        logger.debug(f"creating mt2vcfshards:{name} subtask")
+        output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
+        yield {
+            "name": name,
+            "actions": [(hail_wgs.convert_mt_to_vcf_shards, [mtfile, vcf_path])],
+            "file_dep": [mtfile],
+            "targets": [output_vcf_dir],
+            "setup": ["initialize_hail"],
+            "clean": [clean_dir_targets]
+        }
+
+
+def task_build_vcf():
+    logger.debug("creating build_vcf tasks")
+    for name, mtfile in vcf_endpoints.items():
+        logger.debug(f"creating build_vcf:{name} subtask")
+        vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
+        # vcf_shards = [shard for shard in vcf_shards_dir.glob("part-*.bgz")]
+        output_vcf = mtfile.with_suffix(".vcf.bgz")
+        output_tbi = mtfile.with_suffix(".vcf.bgz.tbi")
+        yield {
+            "name": name,
+            "actions": [f"ml bcftools && bcftools concat --naive -Oz -o {output_vcf!s} {vcf_shards_dir!s}/part-*.bgz",
+                        f"ml htslib && tabix {output_vcf!s}"],
+            "file_dep": [vcf_shards_dir],
+            "targets": [output_vcf, output_tbi],
+            "clean": True
+        }
+
+
+def task_select_covariates():
+    for phenotype in get_phenotypes_list():
+        yield {
+            "name": phenotype,
+            "actions": [(covariate_selection.lasso_feature_selection, [phenotype, design_matrix_path])],
+            "file_dep": [design_matrix_path]
+        }
+
+
+genesis_null_model = wrap_r_function("genesis_null_model_exhaustive")
+
+
+# def wrapped_null_model(path, phenotype, covars):
+#     """calculates a GENESIS null model and reports failed tasks in a way doit can retrieve later"""
+#     result = genesis_null_model(path, phenotype, ro.StrVector(covars))
+def wrapped_null_model(path, phenotype):
+    result = genesis_null_model(path, phenotype)
+    assert isinstance(result.rx2['converged'], bool)
+    if result == ro.NULL:
+        return { "success": False }
+    else:
+        return { "success": result.rx2['converged'],
+                 "covars":  [str(covar) for covar in result.rx2['covars']] }
+
+
+def task_null_model():
+    logger.debug("creating null_model tasks")
+    for phenotype in get_phenotypes_list():
+        logger.debug(f"creating null_model:{phenotype} subtask")
+        yield {
+            "basename": "null_model",
+            "name": phenotype,
+            "actions": [(wrapped_null_model, [sample_matched_path.with_suffix(""), phenotype])],
+            "file_dep": [design_matrix_path, sample_matched_path.with_suffix(".PCRelate.RDS")],
+            "targets": [sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+            #"getargs": {'covars': (f'select_covariates:{phenotype}', 'lasso')},
+            "setup": ["initialize_r"],
+            "clean": True
+        }
+    yield {
+         # for dependencies and cleaning
+         "name": "all",
+         "actions": None,
+         "task_dep": [f"null_model:{phenotype}" for phenotype in get_phenotypes_list()],
+         "clean": [f"rm {sample_matched_path.with_suffix('.*.null.RDS')!s}"]
+     }
+    yield {
+         "name": "traits_of_interest",
+         "actions": None,
+         "task_dep": [f"null_model:{phenotype}" for phenotype in traits_of_interest]
+     }
+
+
+def get_succeeded_phenotypes():
+    succeeded_phenotypes = []
+    for phenotype in get_phenotypes_list():
+        try:
+            if doit.globals.Globals.dep_manager.get_value(f"null_model:{phenotype}", "success"):
+                succeeded_phenotypes.append(phenotype)
+        except:
+            pass
+    return succeeded_phenotypes
+
+
+def gwas_to_run():
+    return {
+        'task_dep': [f"run_gwas:{phenotype}" for phenotype in get_succeeded_phenotypes()]
+    }
+
+
+def task_gwas_to_run():
+    return {
+        "actions": [gwas_to_run],
+        "task_dep": ["null_model:all"]
+    }
+
+
+@bsub("vcf2gds_shards", mem="16G", cpus=256)
+def task_vcf2gds_shards():
+    logger.debug("creating vcf2gds_shards tasks")
+    for name, mtfile in vcf_endpoints.items():
+        logger.debug(f"creating vcf2gds_shards:{name} subtask")
+        vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
+        gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
+        yield {
+            "name": name,
+            "actions": [
+                f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_vcf2gds.R'!s} {vcf_shards_dir!s}"],
+            "file_dep": [vcf_shards_dir],
+            "targets": [gds_shards_dir],
+            "clean": [clean_dir_targets]
+        }
+
+
+@bsub("run_gwas", cpus=48, mem="16G")
+def task_run_gwas():
+    logger.debug("creating run_gwas tasks")
+    for phenotype in get_phenotypes_list():
+        logger.debug(f"creating run_gwas:{phenotype} subtask")
+        yield {
+            "name": phenotype,
+            "actions": [
+                f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_gwas.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
+            "targets": [Path(f"{phenotype}.GENESIS.assoc.txt").resolve()],
+            "file_dep": [gwas_filtered_path.with_suffix(".shards.seq.gds"),
+                         sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+            "setup": ["initialize_r"],
+            "clean": True
+        }
+    yield {
+        "name": "all",
+        "actions": None,
+        "calc_dep": ["gwas_to_run"],
+        "clean": ["rm *.GENESIS.assoc.txt"]
+    }
+    yield {
+         "name": "traits_of_interest",
+         "actions": None,
+         "task_dep": [f"run_gwas:{phenotype}" for phenotype in traits_of_interest]
+     }
+
+
+def task_gwas_plots():
+    logger.debug("creating gwas_plots task")
+    phenotypes_list = get_phenotypes_list()
+    return {
+        "actions":  [(wrap_r_function("make_gwas_plots"), [phenotypes_list])],
+        "task_dep": ["run_gwas:all"],
+        "calc_dep": ["gwas_to_run"],
+        "setup":    ["initialize_r"],
+        "clean":    ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
+    }
+
+def task_gwas_analytics():
+    logger.debug("creating gwas_analytics task")
+    phenotypes_list = get_phenotypes_list()
+    return {
+        "actions":  [(wrap_r_function("gwas_analytics"), [phenotypes_list])],
+        "task_dep": ["run_gwas:all"],
+        "calc_dep": ["gwas_to_run"],
+        "setup":    ["initialize_r"],
+        "clean":    ["rm *.GENESIS.report.tsv"]
+    }
+
+def task_vep():
+    logger.debug("creating vep task")
+    return {
+        "actions": [(hail_wgs.run_vep, [sample_matched_path])],
+        "file_dep": [sample_matched_path, "/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json"],
+        "targets": [vep_path],
+        "setup": ["initialize_hail"],
+        "clean": [clean_dir_targets]
+    }
+
+
+def task_lof_filter():
+    logger.debug("creating lof_filter task")
+    return {
+        "actions": [(hail_wgs.filter_lof_hc, [vep_path])],
+        "file_dep": [vep_path],
+        "targets": [lof_filtered_path],
+        "setup": ["initialize_hail"],
+        "clean": [clean_dir_targets]
+    }
+
+
+def task_build_seq_gds():
+    logger.debug("creating build_seq_gds tasks")
+    for name, mtfile in vcf_endpoints.items():
+        logger.debug(f"creating build_seq_gds:{name} subtask")
+        yield {
+            "name": name,
+            "actions": [wrap_r_function('convert_vcf2seqgds')],
+            "file_dep": [mtfile.with_suffix(".vcf.bgz")],
+            "targets": [mtfile.with_suffix(".seq.gds")],
+            "setup": ["initialize_r"],
+            "clean": True
+        }
+
+
+
+
+# def task_build_seq_gds():
+#    for name, mtfile in vcf_endpoints.items():
+#        gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
+#        output_gds = mtfile.with_suffix(".seq.gds")
+#        yield {
+#            "name":     name,
+#            "actions":  [wrap_r_function("build_seq_gds")],
+#            "file_dep": [gds_shards_dir],
+#            "targets":  [output_gds],
+#            "setup":    ["start_r_cluster"]
+#            }
+
+
+def task_run_smmat():
+    logger.debug("creating run_smmat tasks")
+    for phenotype in get_phenotypes_list():
+        logger.debug(f"creating run_smmat:{phenotype} subtask")
+        yield {
+            "name": phenotype,
+            "actions": [(wrap_r_function("run_smmat"), [lof_filtered_path.with_suffix(".seq.gds"),
+                                                        sample_matched_path.with_suffix(f".{phenotype}.null.RDS"),
+                                                        phenotype])],
+            "targets": [f"{phenotype}.GENESIS.SMMAT.assoc.txt",
+                        f"{phenotype}.GENESIS.SMMAT.manhattan.png",
+                        f"{phenotype}.GENESIS.SMMAT.qq.png"],
+            "file_dep": [lof_filtered_path.with_suffix(".seq.gds"),
+                         sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+            "setup": ["initialize_r"],
+            "clean": True
+        }
+    yield {
+         "name": "traits_of_interest",
+         "actions": None,
+         "task_dep": [f"run_smmat:{phenotype}" for phenotype in traits_of_interest]
+     }
+
+    
+def task_split_chromosomes():
+    for name, mtfile in vcf_endpoints.items():
+        yield {
+            "name": name,
+            "actions":  [(hail_wgs.split_chromosomes, [mtfile])],
+            "file_dep": [mtfile],
+            "targets":  [mtfile.with_suffix(f".chr{chr}.mt") for chr in list(range(1,23)) + ['X']],
+            "clean":    [clean_dir_targets],
+            "setup":    ["initialize_hail"]
+        }
+
+
+@bsub("ld_scores")
+def task_ld_scores():
+    ldsc_path = gwas_filtered_path.with_suffix(".ld_chr")
+    ldsc_path.mkdir(exist_ok=True)
+    for chrom in list(range(1,23)) + ["X"]:
+        bfile_prefix = gwas_filtered_path.with_suffix(f".chr{chrom}")
+        yield {
+            "name":    f"chr{chrom}",
+            "actions": ["ml ldsc && " \
+                        f"ldsc.py --bfile {bfile_prefix} " \
+                        f"--l2 --ld-wind-kb 1000 --out {ldsc_path!s}/{chrom}"],
+            "targets": [ldsc_path / f"{chrom}.l2.M",
+                        ldsc_path / f"{chrom}.l2.M_5_50",
+                        ldsc_path / f"{chrom}.l2.ldscore.gz"],
+            "file_dep": [gwas_filtered_path.with_suffix(f".chr{chrom}.bed"),
+                         gwas_filtered_path.with_suffix(f".chr{chrom}.bim"),
+                         gwas_filtered_path.with_suffix(f".chr{chrom}.fam")],
+            "clean": True
+            }
+    yield {
+            "name":     "all",
+            "actions":  None,
+            "task_dep": [f"ld_scores:chr{chrom}" for chrom in list(range(1,23)) + ["X"]]
+            }
+
+
+@bsub("munge_sumstats")
+def task_munge_sumstats():
+    for phenotype in get_phenotypes_list():
+        assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
+        yield {
+                "name": phenotype,
+                "file_dep": [assoc_file],
+                "targets": [assoc_file.with_suffix(".sumstats.gz")],
+                "actions": ["ml ldsc && " \
+                            f"munge_sumstats.py --sumstats {assoc_file!s} " \
+                            f"--out {assoc_file.with_suffix('')!s} " \
+                            "--snp variant.id --N-col n.obs --frq freq " \
+                            "--a1 effect.allele --a2 other.allele " \
+                            "--p Score.pval --signed-sumstats Est,0"],
+                "clean": True
+                }
+    yield {
+         "name": "traits_of_interest",
+         "actions": None,
+         "task_dep": [f"munge_sumstats:{phenotype}" for phenotype in traits_of_interest]
+     }
+
+
+@bsub("ld_score_regression", mem="16G")
+def task_ld_score_regression():
+    ldscore_path = gwas_filtered_path.with_suffix(".ld_chr")
+    for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
+        sumstats1 = Path(f"{trait1}.GENESIS.assoc.sumstats.gz").resolve()
+        sumstats2 = Path(f"{trait2}.GENESIS.assoc.sumstats.gz").resolve()
+        yield {
+            "name": f"{trait1}.{trait2}",
+            "actions": ["ml ldsc && " \
+                        f"ldsc.py --rg {sumstats1!s},{sumstats2!s} "\
+                        f"--ref-ld-chr {ldscore_path!s}/ "\
+                        f"--w-ld-chr {ldscore_path!s}/ "\
+                        f"--out {trait1}.{trait2}.assoc.rg"],
+            "file_dep": [sumstats1, sumstats2, ldscore_path] + [ldscore_path / f"{chr}.l2.ldscore.gz" for chr in list(range(1,23)) + ["X"]],
+            "targets":  [f"{trait1}.{trait2}.assoc.rg.log"],
+            "clean": True
+            }
+    yield {
+            "name": "traits_of_interest",
+            "actions": None,
+            "task_dep": [f"ld_score_regression:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(traits_of_interest, 2)]
+            }
+
+
+if __name__ == "__main__":
+    import doit
+
+    doit.run(globals())
