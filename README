@@ -1,14 +1,18 @@
 MSCIC COVID-19 Biobank WGS Scripts Readme
-D M Jordan, 3/14/2021
+D M Jordan, 5/7/2021
 Please contact daniel.jordan1@mssm.edu with any questions.
 
 The scripts in this directory are mostly called by ../../files/WGS/dodo.py to
 process data in the ../../files/WGS directory; see the README file in that
-directory for more information.
+directory for more information. (../../files/WGS/dodo.py is symlinked to
+dodo.py in this directory.)
 
 The following files in this directory are actually called by doit in the
 current pipeline:
 
+dodo.py
+    Doit task definition file. Symlinked as ../../files/WGS/dodo.py, and intended
+    to be called by running doit from that directory.
 hail_wgs.py
     contains functions to perform analyses with hail. These need to be run in a
     spark session, and the start_hail() function in that file needs to be run
@@ -38,8 +42,8 @@ build_design_matrix.py
 
 THE PIPELINE
 
-Here is the current list of analyses performed by doit and where they are
-implemented.
+Here is the current list of analyses performed by doit
+and where they are implemented.
 
 Basic QC:
 1. Convert cohort VCF to Hail MT. -- hail_wgs.py:convert_vcf_to_mt()
@@ -55,7 +59,7 @@ Ancestry and Kinship:
 9. Convert PLINK format to SNPArray GDS format. -- seqarray_genesis.R:build_snp_gds()
 10. Run PCAir to get kinship-corrected PCs. -- seqarray_genesis.R:run_pcair()
 11. Run PCRelate to get ancestry-corrected kinship. -- seqarray_genesis.R:run_pcrelate()
-12. Calcualte inferred race categories from PCs. -- race_prediction.py
+12. Calculate inferred race categories from PCs. -- race_prediction.py
 13. Split LD-pruned data files by inferred ancestry. -- hail_wgs.py:subset_mt_samples()
 14. Repeat steps 8-10 to run PCAir on each single ancestry.
 15. Repeat step 13 to split unpruned GWAS-filtered data by ancestry.
