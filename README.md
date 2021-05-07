@@ -38,6 +38,28 @@ to be called by running doit from that directory.
 
 ## The Pipeline
 
+The general structure of the pipeline is that there is a series of "endpoints," each of which represents a specific
+filtering or transformation of the data, and analysis steps that can be done on each endpoint.
+Each endpoint can exist in a number of different data formats, and typically each analysis step requires a specific
+format. The primary reason for using doit is to seamlessly handle which formats and which endpoints are required for 
+each analysis. 
+
+### Endpoints
+
+| Endpoint Name | Description                                                          | Produced by Task |
+|---------------|----------------------------------------------------------------------|------------------|
+| `full`        | Complete data set, after QC and matching to clinical data            | `match_samples`  |
+| `lof`         | Filtered to only predicted loss of function variants                 | `lof_filter`     |
+| `gwas`        | Filtered to variants with MAF > 1% and in Hardy-Weinberg equilibrium | `gwas_filter`    |
+| `ld`          | Same as `gwas`, but pruned so no variants are in LD                  | `ld_prune`       |
+
+Each endpoint can also be prefixed with a racial group (`white_`, `black_`, `hispanic_`, or `asian_`) to subset 
+samples to those predicted to be that race. (Currently this doesn't work for `lof`, not for any technical reason but
+just because it isn't required in the pipeline.) They can also be postfixed with a chromosome (e.g. `_chr3` or `_chrX`)
+to subset sites to one chromosome. (This currently doesn't work for every analysis task, again because it isn't required
+for most of them.)
+
+
 ### Format Conversions
 
 | Task Name           | From Format        | To Format                     | Implementation                            |
@@ -49,69 +71,72 @@ to be called by running doit from that directory.
 | `build_vcf`         | Split VCFs         | Combined VCF                  | Runs bcftools                             |
 | `vcf2gds_shards`    | Split VCFs         | Split SeqArray GDS (.seq.gds) | mpi_vcf2gds.R                             |
 | `build_seq_gds`     | Split SeqArray GDS | Combined SeqArray GDS         | `build_seq_gds` in seqarray_genesis.R     |
-| `split_chromosomes` | Hail               | Single-chromosome Hail        | `split_chromosomes` in hail_wgs.py        | 
-
-These tasks have subtasks representing different pipeline steps.
-Note that there are two different GDS formats: one used by the SNPRelate library, and one used by the SeqArray library. 
-They are not compatible and are treated as separate formats. (Ask me how I feel about that.)
  
+Note that there are two different GDS formats: one used by the SNPRelate library, and one used by the SeqArray library. 
+They are not compatible and are treated as separate formats. (Ask me how I figured that out.)
 
-### QC Steps
+### Preprocessing, Filtering, and Annotation
 
-2. Use Hail to perform sample and variant QC. -- hail_wgs.py:run_hail_qc()
-3. Use Hail to match samples to the clinical data table and perform sex
-    inference. -- hail_wgs.py:match_samples()
-Ancestry and Kinship:
-4. Dump Hail data to PLINK format. -- hail_wgs.py:convert_mt_to_plink()
-5. Use KING to calculate a kinship matrix. -- dodo.py
-6. Use Hail to filter by MAF and HWE p-value for GWAS. -- hail_wgs.py:gwas_filter()
-7. Use Hail to prune SNPs in LD. -- hail_wgs.py:ld_prune()
-8. Repeat step 4 to dump LD-pruned data to PLINK format.
-9. Convert PLINK format to SNPArray GDS format. -- seqarray_genesis.R:build_snp_gds()
-10. Run PCAir to get kinship-corrected PCs. -- seqarray_genesis.R:run_pcair()
-11. Run PCRelate to get ancestry-corrected kinship. -- seqarray_genesis.R:run_pcrelate()
-12. Calculate inferred race categories from PCs. -- race_prediction.py
-13. Split LD-pruned data files by inferred ancestry. -- hail_wgs.py:subset_mt_samples()
-14. Repeat steps 8-10 to run PCAir on each single ancestry.
-15. Repeat step 13 to split unpruned GWAS-filtered data by ancestry.
-Association Analyses:
-16. Generate design matrix for association studies. -- build_design_matrix.py
-17. Calculate GENESIS null model. -- seqarray_genesis.R:genesis_null_model()
-18. Dump unpruned GWAS-filtered data to VCF shards. -- hail_wgs.py:convert_mt_to_vcf_shards()
-19. Convert VCF shards to SeqArray GDS shards. -- mpi_vcf2gds.R
-20. Run GENESIS GWAS analysis. -- mpi_genesis_gwas.R
-21. Repeat steps 18-19 to create GDS shards for unfiltered rare variant data.
-22. Merge GDS shards to single SeqArray GDS file -- seqarray_genesis.R:build_seq_gds()
-23. Run GENESIS rare variant analysis. -- <not yet finalized>
-VCF file output:
-24. Merge VCF shards to single VCF files using bcftools. -- dodo.py
-25. Repeat steps 19 and 24 to create VCF files for each individual ancestry.
+| Task Name           | Description                                                        | Implementation                       |
+|---------------------|--------------------------------------------------------------------|--------------------------------------|
+| `qc`                | Perform sample and variant QC                                      | `run_hail_qc` in  hail_wgs.py        |
+| `match_samples`     | Match samples to the clinical data table and perform sex inference | `match_samples` in hail_wgs.py       |
+| `king`              | Calculate an uncorrected kinship matrix                            | Runs king                            |
+| `gwas_filter`       | Filter by MAF and HWE p-value for GWAS                             | `gwas_filter` in hail_wgs.py         |
+| `ld_prune`          | Prune SNPs in LD                                                   | `ld_prune` in hail_wgs.py            |
+| `pcair`             | Calculate kinship-corrected PCA                                    | `run_pcair` in seqarray_genesis.R    |
+| `pcrelate`          | Calculate ancestry-corrected kinship matrix                        | `run_pcrelate` in seqarray_genesis.R |
+| `race_prediction`   | Calculate inferred race categories from PCA                        | race_prediction.py                   |
+| `split_races`       | Split data files by inferred ancestry                              | `subset_mt_samples` in hail_wgs.py   |
+| `split_chromosomes` | Split data files by chromosome                                     | `split_chromosomes` in hail_wgs.py   |
+| `vep`               | Run VEP to annotate variants                                       | `run_vep` in hail_wgs.py             |
+| `lof_filter`        | Filter to only predicted loss of function sites                    | `filter_lof_hc` in hail_wgs.py       |
 
+### Association Analyses
+Most of the actual association analyses have subtasks for individual phenotypes, plus special subtasks
+`all` and `phenotypes_of_interest`.
+
+| Task Name       | Description                                                | Implementation                                        |
+|-----------------|------------------------------------------------------------|-------------------------------------------------------|
+| `design_matrix` | Generate phenotypes and covariates for association studies | build_design_matrix.py                                |
+| `null_model`    | Calculate GENESIS null models                              | `genesis_null_model_exhaustive` in seqarray_genesis.R |
+| `gwas_to_run`   | Look up which null models were successfully generated      | `gwas_to_run` in dodo.py                              |
+| `run_gwas`      | Run GENESIS GWAS analysis                                  | mpi_genesis_gwas.R                                    |
+| `run_smmat`     | Run GENESIS rare variant analysis on pLOF variants         | `run_smmat` in seqarray_genesis.R                     |
+
+### Postprocessing
+
+| Task Name             | Description                                                                    | Implementation                          |
+|-----------------------|--------------------------------------------------------------------------------|-----------------------------------------|
+| `gwas_plots`          | Produces Manhattan and Q-Q plots for all GWAS traits                           | `make_gwas_plots` in seqarray_genesis.R |
+| `ld_scores`           | Calculates LD scores for the biobank cohort                                    | Runs ldsc.py                            |
+| `munge_sumstats`      | Convert GENESIS's output tables into the .sumstats.gz format required by LDSC  | Runs munge_sumstats.py from LDSC        |
+| `ld_score_regression` | Runs LD score regression between all pairs of GWAS traits                      | Runs ldsc.py                            | 
+
+## Hail Scripts
 
 There are also a series of utility scripts for working with hail and spark.
 While these may be useful for diagnostics or external analyses, they are not
 actually necessary for the doit version of the pipeline: dodo.py currently
-launches a spark cluster for running hail all on its own.
+launches a spark cluster for running hail all on its own. This may change soon, though, as I am
+in the process of converting the doit pipeline to submit tasks through bsub rather than
+expecting to be submitted by bsub.
 
-lsf_submit_hail_jupyter.sh
-    When submitted with bsub, starts a jupyter notebook server running hail. 
+* **lsf_submit_hail_jupyter.sh**: When submitted with bsub, starts a jupyter notebook server running hail. 
     You must then open an SSH tunnel to this notebook in order to interact with
     it.
-lsf_submit_hail.sh
+* **lsf_submit_hail.sh**:
     Call with the command to run as a command-line argument. Submits that 
     command to bsub, along with the setup for a spark cluster suitable for 
     running hail.
-lsf_submit_hail_schade01.sh
+* **lsf_submit_hail_schade01.sh**:
     Same as above, but specifically requests the schade01-1 private node.
-launch_local_hail_notebook.sh
+* **launch_local_hail_notebook.sh**:
     Starts a jupyter notebook running hail on the local machine. You should
     probably only do this on a private node that has many cores free.
-launch_local_spark_cluster.sh
+* **launch_local_spark_cluster.sh**:
     Call with the command to run as a command-line argument. Starts a spark 
     cluster suitable for running hail on the local machine, and then runs
     that command on it. Again, only do this if you're on a node that has
     many cores free.
 
-All other files in this directory are preliminary or experimental versions of 
-the files named above. They may be informative to look at, but aren't in
-current use.
