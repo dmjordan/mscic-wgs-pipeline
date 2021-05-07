@@ -10,11 +10,13 @@ binary_phenotypes = ["ever_covid", "covid_encounter", "ever_icu", "deceased", "r
                      "sofa_ever_increased_icu_only", "who_ever_decreased", "who_ever_increased",
                      "severity_ever_moderate", "severity_ever_severe", "severity_ever_eod", "max_severity_moderate",
                      "severity_ever_decreased", "severity_ever_increased", "severity_ever_decreased_counting_discharge",
-                     "severity_ever_increased_counting_death", "blood_viral_load_detected"]
+                     "severity_ever_increased_counting_death",
+                     "blood_viral_load_detected", "blood_viral_load_detected_severe_only"]
 continuous_phenotypes = ["max_sofa", "max_sofa_icu_only", "max_who", "max_who_minus_death", "highest_titer",
                          "highest_titer_agm_only", "max_viral_load_cn1", "max_viral_load_cn2", "max_viral_load_cn3",
                          "days_onset_to_encounter", "covid_encounter_days", "days_onset_to_icu",
-                         "days_encounter_to_icu", "icu_hours_cumulative", "blood_viral_load_bitscore"]
+                         "days_encounter_to_icu", "icu_hours_cumulative",
+                         "blood_viral_load_bitscore", "blood_viral_load_bitscore_severe_only"]
 all_phenotypes = binary_phenotypes + continuous_phenotypes + \
                 [f"{phenotype}_irnt" for phenotype in continuous_phenotypes] + \
                 [f"{phenotype}_log" for phenotype in continuous_phenotypes] + \
@@ -122,8 +124,11 @@ def build_design_matrix(covariates_path, design_matrix_path):
 
     bvl_table = pd.read_csv("MSCIC_blood_viral_load_predictions.csv")
     bvl_table = bvl_table.drop_duplicates(subset="Subject_ID").set_index("Subject_ID")
+    clinical_table.loc[clinical_table.covid_encounter, "blood_viral_load_bitscore"] = 0.0
     clinical_table["blood_viral_load_bitscore"] = bvl_table.bitscore
+    clinical_table["blood_viral_load_bitscore_severe_only"] = clinical_table.blood_viral_load_bitscore.where(~clinical_table.max_severity_moderate)
     clinical_table["blood_viral_load_detected"] = clinical_table.blood_viral_load_bitscore.notnull().where(clinical_table.covid_encounter).astype("boolean")
+    clinical_table["blood_viral_load_detected_severe_only"] = clinical_table.blood_viral_load_detected.where(~clinical_table.max_severity_moderate)
 
     clinical_table["severity_ever_increased_counting_death"] = clinical_table.severity_ever_increased | clinical_table.deceased
     clinical_table["severity_ever_decreased_counting_discharge"] = clinical_table.severity_ever_decreased | clinical_table.discharged
