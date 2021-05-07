@@ -13,12 +13,9 @@ import rpy2.rinterface as ri
 from decorator import decorate
 import logging
 
-logger = logging.getLogger()
-#logger.setLevel(logging.DEBUG)
-
 scriptsdir = Path("../../scripts/WGS/").resolve()
 sys.path.append(str(scriptsdir))
-import build_design_matrix, race_prediction, hail_wgs, covariate_selection
+import build_design_matrix, race_prediction, hail_wgs
 
 num_cpus = len(os.sched_getaffinity(0))
 
@@ -45,25 +42,12 @@ def unpack_return_value(vector):
     return vector
 
 
-# @ro.conversion.rpy2py.register(ri.NULLType)
-# def none_factory(null):
-#    return None
-
-
 def wrap_r_function(funcname):
     pyfuncname = funcname.replace(".", "_")
     return ro.functions.wrap_r_function(r[funcname], pyfuncname)
 
 
 r.source(scriptsdir / "seqarray_genesis.R")
-
-# binary_phenotypes=["ever_covid", "covid_encounter", "ever_icu", "deceased", "recovered", "discharged", "recovered_not_deceased", "deceased_vs_recovered", "deceased_vs_discharged", "sofa_ever_decreased", "sofa_ever_increased", "who_ever_decreased", "who_ever_increased", "severity_ever_decreased", "severity_ever_increased", "severity_ever_decreased_counting_discharge", "severity_ever_increased_counting_death"]
-# continuous_phenotypes=["icu_hours_cumulative", "max_sofa", "max_who", "max_who_minus_death", "highest_titer", "highest_titer_agm_only", "days_onset_to_encounter", "days_onset_to_icu", "days_encounter_to_icu", "covid_encounter_days"]
-# all_phenotypes = (binary_phenotypes +
-#                      continuous_phenotypes +
-#                      [phenotype + "_irnt" for phenotype in continuous_phenotypes] +
-#                      [phenotype + "_percentile" for phenotype in continuous_phenotypes] +
-#                      [phenotype + "_log" for phenotype in continuous_phenotypes])
 
 vcf_path = Path('/sc/arion/projects/mscic1/techdev.incoming/DNA/all_625_samples_cohort_vcf/625_Samples.cohort.vcf.gz')
 
@@ -222,7 +206,6 @@ class bsub:
 
 
 def task_initialize_hail():
-    logger.debug("creating initialize_hail task")
     os.environ["HAIL_HOME"] = str(Path(sysconfig.get_path("purelib")) / "hail")
     if "LSB_JOBID" in os.environ:
         hostname = socket.gethostname()
@@ -255,7 +238,6 @@ def clean_dir_targets(task):
 
 
 def task_vcf2mt():
-    logger.debug("creating vcf2mt task")
     return {
         "actions": [(hail_wgs.convert_vcf_to_mt, [vcf_path, mt_path])],
         "targets": [mt_path],
@@ -266,7 +248,6 @@ def task_vcf2mt():
 
 
 def task_qc():
-    logger.debug("creating qc task")
     return {
         "actions": [(hail_wgs.run_hail_qc, [mt_path])],
         "targets": [qc_path,
@@ -285,7 +266,6 @@ def task_qc():
 
 
 def task_match_samples():
-    logger.debug("creating match_samples task")
     return {
         "actions": [(hail_wgs.match_samples, [covariates_path, qc_path])],
         "targets": [sample_matched_path],
@@ -296,10 +276,8 @@ def task_match_samples():
 
 
 def task_mt2plink():
-    logger.debug("creating mt2plink tasks")
     for endpoint_name, endpoint_mtfile in vcf_endpoints.items():
         for name, mtfile in [(f"{endpoint_name}_chr{chrom}", endpoint_mtfile.with_suffix(f".chr{chrom}.mt")) for chrom in list(range(1,23)) + ["X"]] + [(endpoint_name, endpoint_mtfile)]:
-            logger.debug(f"creating mt2plink:{name} subtask")
             yield {
                 "name": name,
                 "actions": [(hail_wgs.convert_mt_to_plink, [mtfile]),
@@ -315,7 +293,6 @@ def task_mt2plink():
 
 
 def task_king():
-    logger.debug("creating king task")
     return {
         "actions": ["ml king && king "
                     f'-b {sample_matched_path.with_suffix(".bed")} '
@@ -333,13 +310,11 @@ def task_king():
 
 
 def task_gwas_filter():
-    logger.debug("creating gwas_filter tasks")
     for subset, input_path in [("all", sample_matched_path),
                                ("white", white_only_path),
                                ("black", black_only_path),
                                ("hispanic", hispanic_only_path),
                                ("asian", asian_only_path)]:
-        logger.debug(f"creating gwas_filter:{subset} subtask")
         yield {
             "name": subset,
             "actions": [(hail_wgs.gwas_filter, [input_path])],
@@ -351,13 +326,11 @@ def task_gwas_filter():
 
 
 def task_ld_prune():
-    logger.debug("creating ld_prune tasks")
     for subset, input_path in [("all", gwas_filtered_path),
                                ("white", white_gwas_path),
                                ("black", black_gwas_path),
                                ("hispanic", hispanic_gwas_path),
                                ("asian", asian_gwas_path)]:
-        logger.debug(f"creating ld_prune:{subset} subtask")
         yield {
             "name": subset,
             "actions": [(hail_wgs.ld_prune, [input_path])],
@@ -368,12 +341,7 @@ def task_ld_prune():
         }
 
 
-def initialize_r():
-    r.start_cluster()
-
-
 def task_initialize_r():
-    logger.debug("creating initialize_r task")
     return {
         "actions": [wrap_r_function("start_cluster")],
         "teardown": [wrap_r_function("stop_cluster")]
@@ -381,9 +349,7 @@ def task_initialize_r():
 
 
 def task_build_snp_gds():
-    logger.debug("creating build_snp_gds tasks")
     for name, mtfile in vcf_endpoints.items():
-        logger.debug(f"creating build_snp_gds:{name} subtask")
         output_gds = mtfile.with_suffix(".snp.gds")
         yield {
             "name": name,
@@ -398,13 +364,11 @@ def task_build_snp_gds():
 
 
 def task_pcair():
-    logger.debug("creating pcair tasks")
     for race, inpath, outpath in [("all", ld_pruned_path, sample_matched_path),
                                   ("white", white_ld_path, white_only_path),
                                   ("black", black_ld_path, black_only_path),
                                   ("hispanic", hispanic_ld_path, hispanic_only_path),
                                   ("asian", asian_ld_path, asian_only_path)]:
-        logger.debug(f"creating pcair:{race} subtask")
         yield {
             "name": race,
             "actions": [(wrap_r_function("run_pcair"), [inpath.with_suffix(".snp.gds"), outpath.with_suffix("")])],
@@ -420,7 +384,6 @@ def task_pcair():
 
 
 def task_race_prediction():
-    logger.debug("creating race_prediction task")
     return {"actions": [race_prediction.predict_races],
             "targets": [sample_matched_path.with_suffix(".race_and_PCA.csv"),
                         "WHITE.indiv_list.txt",
@@ -435,11 +398,9 @@ def task_race_prediction():
 
 
 def task_split_races():
-    logger.debug("creating split_races tasks")
     for name, mtfile in [("full", sample_matched_path),
                          ("ld", ld_pruned_path)]:
         for race in ("WHITE", "BLACK", "HISPANIC", "ASIAN"):
-            logger.debug(f"creating split_races:{race.lower()}_{name} subtask")
             listfile = f"{race}.indiv_list.txt"
             outfile = mtfile.with_suffix(f".{race}_only.mt")
             yield {
@@ -453,7 +414,6 @@ def task_split_races():
 
 
 def task_design_matrix():
-    logger.debug("creating design_matrix task")
     return {
         "actions": [(build_design_matrix.build_design_matrix, [covariates_path, design_matrix_path])],
         "targets": [design_matrix_path],
@@ -464,12 +424,10 @@ def task_design_matrix():
 
 
 def get_phenotypes_list():
-    #return doit.globals.Globals.dep_manager.get_value("design_matrix", "phenotypes")
     return build_design_matrix.all_phenotypes
 
 
 def task_pcrelate():
-    logger.debug("creating pcrelate task")
     return {
         "actions": [(wrap_r_function("run_pcrelate"), [sample_matched_path.with_suffix("")])],
         "targets": [sample_matched_path.with_suffix(".PCRelate.RDS")],
@@ -481,9 +439,7 @@ def task_pcrelate():
 
 
 def task_mt2vcfshards():
-    logger.debug("creating mt2vcfshards tasks")
     for name, mtfile in vcf_endpoints.items():
-        logger.debug(f"creating mt2vcfshards:{name} subtask")
         output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
         yield {
             "name": name,
@@ -496,11 +452,8 @@ def task_mt2vcfshards():
 
 
 def task_build_vcf():
-    logger.debug("creating build_vcf tasks")
     for name, mtfile in vcf_endpoints.items():
-        logger.debug(f"creating build_vcf:{name} subtask")
         vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
-        # vcf_shards = [shard for shard in vcf_shards_dir.glob("part-*.bgz")]
         output_vcf = mtfile.with_suffix(".vcf.bgz")
         output_tbi = mtfile.with_suffix(".vcf.bgz.tbi")
         yield {
@@ -513,42 +466,27 @@ def task_build_vcf():
         }
 
 
-def task_select_covariates():
-    for phenotype in get_phenotypes_list():
-        yield {
-            "name": phenotype,
-            "actions": [(covariate_selection.lasso_feature_selection, [phenotype, design_matrix_path])],
-            "file_dep": [design_matrix_path]
-        }
-
-
 genesis_null_model = wrap_r_function("genesis_null_model_exhaustive")
 
 
-# def wrapped_null_model(path, phenotype, covars):
-#     """calculates a GENESIS null model and reports failed tasks in a way doit can retrieve later"""
-#     result = genesis_null_model(path, phenotype, ro.StrVector(covars))
 def wrapped_null_model(path, phenotype):
     result = genesis_null_model(path, phenotype)
     assert isinstance(result.rx2['converged'], bool)
     if result == ro.NULL:
-        return { "success": False }
+        return {"success": False}
     else:
-        return { "success": result.rx2['converged'],
-                 "covars":  [str(covar) for covar in result.rx2['covars']] }
+        return {"success": result.rx2['converged'],
+                 "covars":  [str(covar) for covar in result.rx2['covars']]}
 
 
 def task_null_model():
-    logger.debug("creating null_model tasks")
     for phenotype in get_phenotypes_list():
-        logger.debug(f"creating null_model:{phenotype} subtask")
         yield {
             "basename": "null_model",
             "name": phenotype,
             "actions": [(wrapped_null_model, [sample_matched_path.with_suffix(""), phenotype])],
             "file_dep": [design_matrix_path, sample_matched_path.with_suffix(".PCRelate.RDS")],
             "targets": [sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
-            #"getargs": {'covars': (f'select_covariates:{phenotype}', 'lasso')},
             "setup": ["initialize_r"],
             "clean": True
         }
@@ -592,9 +530,7 @@ def task_gwas_to_run():
 
 @bsub("vcf2gds_shards", mem="16G", cpus=256)
 def task_vcf2gds_shards():
-    logger.debug("creating vcf2gds_shards tasks")
     for name, mtfile in vcf_endpoints.items():
-        logger.debug(f"creating vcf2gds_shards:{name} subtask")
         vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
         gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
         yield {
@@ -609,9 +545,7 @@ def task_vcf2gds_shards():
 
 @bsub("run_gwas", cpus=48, mem="16G")
 def task_run_gwas():
-    logger.debug("creating run_gwas tasks")
     for phenotype in get_phenotypes_list():
-        logger.debug(f"creating run_gwas:{phenotype} subtask")
         yield {
             "name": phenotype,
             "actions": [
@@ -636,7 +570,6 @@ def task_run_gwas():
 
 
 def task_gwas_plots():
-    logger.debug("creating gwas_plots task")
     phenotypes_list = get_phenotypes_list()
     return {
         "actions":  [(wrap_r_function("make_gwas_plots"), [phenotypes_list])],
@@ -646,19 +579,8 @@ def task_gwas_plots():
         "clean":    ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
     }
 
-def task_gwas_analytics():
-    logger.debug("creating gwas_analytics task")
-    phenotypes_list = get_phenotypes_list()
-    return {
-        "actions":  [(wrap_r_function("gwas_analytics"), [phenotypes_list])],
-        "task_dep": ["run_gwas:all"],
-        "calc_dep": ["gwas_to_run"],
-        "setup":    ["initialize_r"],
-        "clean":    ["rm *.GENESIS.report.tsv"]
-    }
 
 def task_vep():
-    logger.debug("creating vep task")
     return {
         "actions": [(hail_wgs.run_vep, [sample_matched_path])],
         "file_dep": [sample_matched_path, "/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json"],
@@ -669,7 +591,6 @@ def task_vep():
 
 
 def task_lof_filter():
-    logger.debug("creating lof_filter task")
     return {
         "actions": [(hail_wgs.filter_lof_hc, [vep_path])],
         "file_dep": [vep_path],
@@ -679,39 +600,21 @@ def task_lof_filter():
     }
 
 
-def task_build_seq_gds():
-    logger.debug("creating build_seq_gds tasks")
+ def task_build_seq_gds():
     for name, mtfile in vcf_endpoints.items():
-        logger.debug(f"creating build_seq_gds:{name} subtask")
+        gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
+        output_gds = mtfile.with_suffix(".seq.gds")
         yield {
-            "name": name,
-            "actions": [wrap_r_function('convert_vcf2seqgds')],
-            "file_dep": [mtfile.with_suffix(".vcf.bgz")],
-            "targets": [mtfile.with_suffix(".seq.gds")],
-            "setup": ["initialize_r"],
-            "clean": True
-        }
-
-
-
-
-# def task_build_seq_gds():
-#    for name, mtfile in vcf_endpoints.items():
-#        gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
-#        output_gds = mtfile.with_suffix(".seq.gds")
-#        yield {
-#            "name":     name,
-#            "actions":  [wrap_r_function("build_seq_gds")],
-#            "file_dep": [gds_shards_dir],
-#            "targets":  [output_gds],
-#            "setup":    ["start_r_cluster"]
-#            }
+            "name":     name,
+            "actions":  [wrap_r_function("build_seq_gds")],
+            "file_dep": [gds_shards_dir],
+            "targets":  [output_gds],
+            "setup":    ["start_r_cluster"]
+            }
 
 
 def task_run_smmat():
-    logger.debug("creating run_smmat tasks")
     for phenotype in get_phenotypes_list():
-        logger.debug(f"creating run_smmat:{phenotype} subtask")
         yield {
             "name": phenotype,
             "actions": [(wrap_r_function("run_smmat"), [lof_filtered_path.with_suffix(".seq.gds"),
