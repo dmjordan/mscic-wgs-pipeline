@@ -729,6 +729,45 @@ def task_ld_score_regression():
             }
 
 
+def task_convert_gwas_snps_gtex():
+    for phenotype in get_phenotypes_list():
+        yield {
+            "name": phenotype,
+            "actions": ["""awk '(NR == 1) { print } 
+                        (NR > 1) { split($1, variant, ":");
+                                   $1 = sprintf("%s_%s_%s_%s_b38", variant[1], variant[2], variant[3], variant[4]);
+                                   print  }' """ +
+                        f"{phenotype}.GENESIS.assoc.txt > {phenotype}.GENESIS.assoc.gtex_ids.txt"
+                        ],
+            "targets": [f"{phenotype}.GENESIS.assoc.gtex_ids.txt"],
+            "file_dep": [f"{phenotype}.GENESIS.assoc.txt"],
+            "clean": True
+        }
+
+
+def task_s_predixcan():
+    s_predixcan_script = scriptsdir / "MetaXcan/software/SPrediXcan.py"
+    gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
+    for phenotype in get_phenotypes_list():
+        yield {
+            "name": phenotype,
+            "actions": [f"python {s_predixcan_script!s} --gwas_file {phenotype}.GENESIS.assoc.gtex_ids.txt "
+                        "--snp_column variant.id --chromosome_column chr --position_column pos "
+                        "--effect_allele_column effect.allele --non_effect_allele_column other.allele "
+                        "--beta_column Est --se_column Est.SE --pvalue_column Score.pval --keep_non_rsid "
+                        f"--model_{gtex_models_path / 'mashr_Lung.db'!s} "
+                        f"--covariance {gtex_models_path / 'mashr_Lung.txt.gz'!s} "
+                        f"--output_file {phenotype}.SPrediXcan.mashr_Lung.csv"],
+            "file_dep": [f"{phenotype}.GENESIS.assoc.gtex_ids.txt"],
+            "targets": [f"{phenotype}.SPrediXcan.mashr_Lung.csv"],
+            "clean": True
+        }
+    yield {
+        "name": "phenotypes_of_interest",
+        "actions": None,
+        "task_dep": [f"s_predixcan:{phenotype}" for phenotype in traits_of_interest]
+    }
+
 if __name__ == "__main__":
     import doit
 
