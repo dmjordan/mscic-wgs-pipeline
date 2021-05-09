@@ -493,6 +493,11 @@ def task_null_model():
          "actions": None,
          "task_dep": [f"null_model:{phenotype}" for phenotype in traits_of_interest]
      }
+    yield {
+         "name": "blood_viral_load",
+         "actions": None,
+         "task_dep": [f"null_model:blood_viral_load_*"]
+     }
 
 
 def get_succeeded_phenotypes():
@@ -556,6 +561,11 @@ def task_run_gwas():
          "name": "traits_of_interest",
          "actions": None,
          "task_dep": [f"run_gwas:{phenotype}" for phenotype in traits_of_interest]
+     }
+    yield {
+         "name": "blood_viral_load",
+         "actions": None,
+         "task_dep": [f"run_gwas:blood_viral_load_*"]
      }
 
 
