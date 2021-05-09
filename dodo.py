@@ -98,6 +98,7 @@ design_matrix_path = Path(
 traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
         "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased", 
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
+bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
 
 class MD5DirectoryChecker(MD5Checker):
     """Just like the default MD5Checker, but works for directories too.
@@ -496,7 +497,7 @@ def task_null_model():
     yield {
          "name": "blood_viral_load",
          "actions": None,
-         "task_dep": [f"null_model:blood_viral_load_*"]
+         "task_dep": ["null_model:blood_viral_load_*"]
      }
 
 
@@ -538,7 +539,7 @@ def task_vcf2gds_shards():
         }
 
 
-@bsub("run_gwas", cpus=48, mem="16G")
+@bsub("run_gwas", cpus=128, mem="16G")
 def task_run_gwas():
     for phenotype in get_phenotypes_list():
         yield {
@@ -565,7 +566,7 @@ def task_run_gwas():
     yield {
          "name": "blood_viral_load",
          "actions": None,
-         "task_dep": [f"run_gwas:blood_viral_load_*"]
+         "task_dep": [f"run_gwas:{phenotype}" for phenotype in bvl_traits]
      }
 
 
