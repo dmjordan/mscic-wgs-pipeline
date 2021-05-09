@@ -34,10 +34,13 @@ family <- if (clinical_table %>% filter(.[[endpoint]] != 0 & .[[endpoint]] != 1)
 pcrel_result <- readRDS(paste(file_prefix, "PCRelate", "RDS", sep="."))
 grm <- pcrelateToMatrix(pcrel_result)
 
+chunkSize <- length(all_covar_combinations) %/% clusterSize(cl)
+
 ptm <- proc.time()
 models <- foreach (covars=all_covar_combinations,
          .packages="GENESIS",
-         .errorhandling="remove") %dopar% {
+         .errorhandling="remove",
+         .options.mpi=list(chunkSize=chunkSize)) %dopar% {
         model <- fitNullModel(scan_annot, outcome=endpoint,
                               covars=covars,
                               cov.mat=grm, family=family)
@@ -50,3 +53,8 @@ map_dbl(models, "AIC") %>% compact %>% which.min %>% pluck(models, .) -> model
 cat("Best combination:", model$covars, "\n")
 
 saveRDS(model, paste(file_prefix, endpoint, "null", "RDS", sep="."))
+
+closeCluster(cl)
+mpi.quit()
+NULL
+

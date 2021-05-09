@@ -468,7 +468,7 @@ def task_build_vcf():
         }
 
 
-@bsub("null_model", mem="16G", num_cpus=32)
+@bsub("null_model", mem="16G", cpus=128)
 def task_null_model():
     for phenotype in get_phenotypes_list():
         yield {
