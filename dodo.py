@@ -2,6 +2,8 @@ import sys, os, re, subprocess, socket, sysconfig, shutil, shlex, itertools, war
 import attr, more_itertools
 from typing import Union
 from pathlib import Path
+
+import rpy2.rinterface_lib.embedded
 from doit.dependency import MD5Checker
 from doit.task import clean_targets
 from doit import create_after
@@ -466,25 +468,14 @@ def task_build_vcf():
         }
 
 
-genesis_null_model = wrap_r_function("genesis_null_model_exhaustive")
-
-
-def wrapped_null_model(path, phenotype):
-    result = genesis_null_model(path, phenotype)
-    assert isinstance(result.rx2['converged'], bool)
-    if result == ro.NULL:
-        return {"success": False}
-    else:
-        return {"success": result.rx2['converged'],
-                 "covars":  [str(covar) for covar in result.rx2['covars']]}
-
-
+@bsub("null_model", mem="16G", num_cpus=32)
 def task_null_model():
     for phenotype in get_phenotypes_list():
         yield {
             "basename": "null_model",
             "name": phenotype,
-            "actions": [(wrapped_null_model, [sample_matched_path.with_suffix(""), phenotype])],
+            "actions": [
+                f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_null_model_exhaustive.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
             "file_dep": [design_matrix_path, sample_matched_path.with_suffix(".PCRelate.RDS")],
             "targets": [sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
             "setup": ["initialize_r"],
@@ -505,14 +496,13 @@ def task_null_model():
 
 
 def get_succeeded_phenotypes():
-    succeeded_phenotypes = []
     for phenotype in get_phenotypes_list():
         try:
-            if doit.globals.Globals.dep_manager.get_value(f"null_model:{phenotype}", "success"):
-                succeeded_phenotypes.append(phenotype)
-        except:
-            pass
-    return succeeded_phenotypes
+            result = r.readRDS(sample_matched_path.with_suffix(f".{phenotype}.null.RDS"))
+        except rpy2.rinterface_lib.embedded.RRuntimeError:
+            continue
+        if result != ro.NULL and result.rx2['converged'] is True:
+            yield phenotype
 
 
 def gwas_to_run():
