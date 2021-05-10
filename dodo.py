@@ -728,45 +728,79 @@ def task_ld_score_regression():
             "task_dep": [f"ld_score_regression:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(traits_of_interest, 2)]
             }
 
-
-def task_convert_gwas_snps_gtex():
+@bsub("metaxcan_harmonize")
+def task_metaxcan_harmonize():
+    gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
+    metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
     for phenotype in get_phenotypes_list():
+        assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
+        harmonized_file = assoc_file.with_suffix(".metaxcan_harmonized.txt")
         yield {
             "name": phenotype,
-            "actions": ["""awk '(NR == 1) {{ print }} 
-                        (NR > 1) {{ split($1, variant, ":");
-                                   $1 = sprintf("%%s_%%s_%%s_%%s_b38", variant[1], variant[2], variant[3], variant[4]);
-                                   print  }}' """ +
-                        f"{phenotype}.GENESIS.assoc.txt > {phenotype}.GENESIS.assoc.gtex_ids.txt"
+            "actions": [f"python {gwas_parsing_script} "
+                        "-separator ' ' "
+                        f"-gwas_file {assoc_file!s} "
+                        f"-snp_reference_metadata {metadata_file!s} METADATA "
+                        "-output_column_map variant.id variant_id "
+                        "-output_column_map other.allele non_effect_allele "
+                        "-output_column_map effect.allele effect_allele "
+                        "-output_column_map Est effect_size "
+                        "-output_column_map Est.SE standard_error "
+                        "-output_column_map Score.pval pvalue "
+                        "-output_column_map chr chromosome --chromosome_format "
+                        "-output_column_map pos position "
+                        "-output_column_map n.obs sample_size "
+                        "-output_column_map freq frequency "
+                        "-output_order variant_id panel_variant_id chromosome position effect_allele non_effect_allele frequency pvalue zscore effect_size standard_error sample_size "
+                        f"-output {harmonized_file}"
                         ],
-            "targets": [f"{phenotype}.GENESIS.assoc.gtex_ids.txt"],
-            "file_dep": [f"{phenotype}.GENESIS.assoc.txt"],
+            "targets": [harmonized_file],
+            "file_dep": [assoc_file],
             "clean": True
         }
 
 
 @bsub("s_predixcan")
 def task_s_predixcan():
-    s_predixcan_script = scriptsdir / "MetaXcan/software/SPrediXcan.py"
+    s_predixcan_script = scriptsdir / "MetaXcan" / "software" / "SPrediXcan.py"
     gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
-    for phenotype in get_phenotypes_list():
-        yield {
-            "name": phenotype,
-            "actions": [f"python {s_predixcan_script!s} --gwas_file {phenotype}.GENESIS.assoc.gtex_ids.txt "
-                        "--snp_column variant.id --chromosome_column chr --position_column pos "
-                        "--effect_allele_column effect.allele --non_effect_allele_column other.allele "
-                        "--beta_column Est --se_column Est.SE --pvalue_column Score.pval --keep_non_rsid "
-                        f"--model_db_path {gtex_models_path / 'mashr_Lung.db'!s} "
-                        f"--covariance {gtex_models_path / 'mashr_Lung.txt.gz'!s} "
-                        f"--output_file {phenotype}.SPrediXcan.mashr_Lung.csv"],
-            "file_dep": [f"{phenotype}.GENESIS.assoc.gtex_ids.txt"],
-            "targets": [f"{phenotype}.SPrediXcan.mashr_Lung.csv"],
-            "clean": True
-        }
+    output_dir = Path("./spredixcan_results").resolve()
+    output_dir.mkdir(exist_ok=True)
+    model_names = []
+    for model in gtex_models_path.glob("*.db"):
+        model_name = model.with_suffix("").name
+        model_names.append(model_name)
+        for phenotype in get_phenotypes_list():
+            assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
+            output_file = output_dir / f"{phenotype}.{model_name}.csv"
+            yield {
+                "name": f"{phenotype}_{model_name}",
+                "actions": [f"python {s_predixcan_script!s} "
+                            f"--gwas_file {assoc_file!s} "
+                            "--snp_column panel_variant_id "
+                            "--chromosome_column chromosome "
+                            "--position_column position "
+                            "--effect_allele_column effect_allele "
+                            "--non_effect_allele_column non_effect_allele "
+                            "--beta_column effect_size "
+                            "--se_column standard_error "
+                            "--pvalue_column pvalue "
+                            "--model_db_snp_key varID "
+                            "--keep_non_rsid "
+                            "--additional_output "
+                            "--overwrite "
+                            "--throw "
+                            f"--model_db_path {model!s} "
+                            f"--covariance {model.with_suffix('.txt.gz')!s} "
+                            f"--output_file {output_file!s}"],
+                "file_dep": [assoc_file],
+                "targets": [output_file],
+                "clean": True
+            }
     yield {
         "name": "traits_of_interest",
         "actions": None,
-        "task_dep": [f"s_predixcan:{phenotype}" for phenotype in traits_of_interest]
+        "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
     }
 
 if __name__ == "__main__":
