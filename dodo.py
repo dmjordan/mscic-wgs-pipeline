@@ -728,7 +728,7 @@ def task_ld_score_regression():
             "task_dep": [f"ld_score_regression:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(traits_of_interest, 2)]
             }
 
-@bsub("metaxcan_harmonize")
+@bsub("metaxcan_harmonize", mem="20G")
 def task_metaxcan_harmonize():
     gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
     metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
