@@ -803,6 +803,50 @@ def task_s_predixcan():
         "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
     }
 
+@bsub("s_multixcan", mem="8G")
+def task_s_multixcan():
+    s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMultiXcan.py"
+    metaxcan_data_dir = Path("../../resources/metaxcan_data").resolve()
+    gtex_models_path = metaxcan_data_dir / "models" / "eqtl" / "mashr"
+    snp_covariance_file = metaxcan_data_dir / "models" / "gtex_v8_expression_mashr_snp_smultixcan_covariance.txt.gz"
+    predixcan_output_dir = Path("./spredixcan_results").resolve()
+    model_names = [model.with_suffix("").name for model in gtex_models_path.glob("*.db")]
+    for phenotype in get_phenotypes_list():
+        assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
+        output_file = predixcan_output_dir / f"{phenotype}.smultixcan.txt"
+        yield {
+            "name": phenotype,
+            "actions": [f"python {s_multixcan_script!s} "
+                        f"--models_folder {gtex_models_path!s} "
+                        '--models_name_pattern "mashr_(.*).db" '
+                        f"--snp_covariance {snp_covariance_file!s} "
+                        f"--metaxcan_folder {predixcan_output_dir!s} "
+                        f'--metaxcan_filter "{phenotype}.mashr_(.*).csv" '
+                        "--metaxcan_file_name_parse_pattern (.*).mashr_(.*).csv "
+                        f"--gwas_file {assoc_file!s} "
+                        "--snp_column panel_variant_id "
+                        "--chromosome_column chromosome "
+                        "--position_column position "
+                        "--effect_allele_column effect_allele "
+                        "--non_effect_allele_column non_effect_allele "
+                        "--beta_column effect_size "
+                        "--se_column standard_error "
+                        "--pvalue_column pvalue "
+                        "--model_db_snp_key varID "
+                        "--keep_non_rsid "
+                        "--cutoff_condition_number 30 "
+                        "--throw "
+                        f"--output {output_file!s}"],
+            "file_dep": [assoc_file] + [predixcan_output_dir / f"{phenotype}_{model_name}.csv" for model_name in model_names],
+            "targets": [output_file],
+            "clean": True
+        }
+    yield {
+        "name": "traits_of_interest",
+        "actions": None,
+        "task_dep": [f"s_multixcan:{phenotype}" for phenotype in traits_of_interest]
+    }
+
 if __name__ == "__main__":
     import doit
 
