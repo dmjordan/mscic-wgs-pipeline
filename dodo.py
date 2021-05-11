@@ -240,24 +240,23 @@ class BsubAction(CmdAction):
 
 
 class bsub_hail(bsub):
-    hail_submit_script: ClassVar[str] = """ml spark/2.4.5
-    ml -python
-    export HAIL_HOME={sysconfig.get_path("purelib")}/hail
-    export SPARK_LOG_DIR=/sc/arion/projects/mscic1/scratch/hail/logs/
-    export SPARK_WORKER_DIR=/sc/arion/projects/mscic1/scratch/hail/worker/
-    
-    lsf-spark-submit.sh \
+    def format_bsub_command(self, cmd):
+        hail_submit_script = f"""ml spark/2.4.5
+        ml -python
+        export HAIL_HOME={sysconfig.get_path("purelib")}/hail
+        export SPARK_LOG_DIR=/sc/arion/projects/mscic1/scratch/hail/logs/
+        export SPARK_WORKER_DIR=/sc/arion/projects/mscic1/scratch/hail/worker/
+        
+        lsf-spark-submit.sh \
         --jars $HAIL_HOME/backend/hail-all-spark.jar \
         --conf spark.driver.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
         --conf spark.executor.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
         --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
         --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
-        --executor-memory {mem_gb-4}G \
-        --driver-memory {mem_gb-4}G """
+        --executor-memory {self.mem_gb-4}G \
+        --driver-memory {self.mem_gb-4}G {cmd}"""
 
-    def format_bsub_command(self, cmd):
-        return (self.get_bsub_invocation() +
-                shlex.quote(self.hail_submit_script.format_map(attr.asdict(self)) + cmd))
+        return self.get_bsub_invocation() + shlex.quote(hail_submit_script)
 
 
 def task_initialize_hail():
