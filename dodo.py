@@ -805,7 +805,7 @@ def task_s_predixcan():
 
 @bsub("s_multixcan", mem="8G")
 def task_s_multixcan():
-    s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMultiXcan.py"
+    s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMulTiXcan.py"
     metaxcan_data_dir = Path("../../resources/metaxcan_data").resolve()
     gtex_models_path = metaxcan_data_dir / "models" / "eqtl" / "mashr"
     snp_covariance_file = metaxcan_data_dir / "models" / "gtex_v8_expression_mashr_snp_smultixcan_covariance.txt.gz"
@@ -822,7 +822,7 @@ def task_s_multixcan():
                         f"--snp_covariance {snp_covariance_file!s} "
                         f"--metaxcan_folder {predixcan_output_dir!s} "
                         f'--metaxcan_filter "{phenotype}.mashr_(.*).csv" '
-                        "--metaxcan_file_name_parse_pattern (.*).mashr_(.*).csv "
+                        '--metaxcan_file_name_parse_pattern "(.*).mashr_(.*).csv" '
                         f"--gwas_file {assoc_file!s} "
                         "--snp_column panel_variant_id "
                         "--chromosome_column chromosome "
@@ -837,7 +837,7 @@ def task_s_multixcan():
                         "--cutoff_condition_number 30 "
                         "--throw "
                         f"--output {output_file!s}"],
-            "file_dep": [assoc_file] + [predixcan_output_dir / f"{phenotype}_{model_name}.csv" for model_name in model_names],
+            "file_dep": [assoc_file] + [predixcan_output_dir / f"{phenotype}.{model_name}.csv" for model_name in model_names],
             "targets": [output_file],
             "clean": True
         }
