@@ -291,7 +291,7 @@ def clean_dir_targets(task):
                 warnings.warn(f"clean_dir_targets found target {target!s} still existing, but it is not a directory")
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_vcf2mt():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-vcf-to-mt {vcf_path} {mt_path}"],
@@ -301,7 +301,7 @@ def task_vcf2mt():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_qc():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} run-hail-qc {mt_path}"],
@@ -319,7 +319,7 @@ def task_qc():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_match_samples():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} match-samples {covariates_path} {qc_path}"],
@@ -329,7 +329,7 @@ def task_match_samples():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_mt2plink():
     for endpoint_name, endpoint_mtfile in vcf_endpoints.items():
         for name, mtfile in [(f"{endpoint_name}_chr{chrom}", endpoint_mtfile.with_suffix(f".chr{chrom}.mt")) for chrom in list(range(1,23)) + ["X"]] + [(endpoint_name, endpoint_mtfile)]:
@@ -362,7 +362,7 @@ def task_king():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_gwas_filter():
     for subset, input_path in [("all", sample_matched_path),
                                ("white", white_only_path),
@@ -378,7 +378,7 @@ def task_gwas_filter():
         }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_ld_prune():
     for subset, input_path in [("all", gwas_filtered_path),
                                ("white", white_gwas_path),
@@ -450,7 +450,7 @@ def task_race_prediction():
             }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_split_races():
     for name, mtfile in [("full", sample_matched_path),
                          ("ld", ld_pruned_path)]:
@@ -491,7 +491,7 @@ def task_pcrelate():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_mt2vcfshards():
     for name, mtfile in vcf_endpoints.items():
         output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
@@ -574,7 +574,7 @@ def task_gwas_to_run():
     }
 
 
-@bsub(mem_gb=16, cpus=256)
+@bsub(mem_gb=16, cpus=128)
 def task_vcf2gds_shards():
     for name, mtfile in vcf_endpoints.items():
         vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
@@ -639,7 +639,7 @@ def task_gwas_plots():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_vep():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} run-vep {sample_matched_path}"],
@@ -649,7 +649,7 @@ def task_vep():
     }
 
 
-@bsub_hail(cpus=256)
+@bsub_hail(cpus=128)
 def task_lof_filter():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-lof-hc {vep_path}"],
