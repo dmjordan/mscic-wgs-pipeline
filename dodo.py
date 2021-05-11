@@ -185,6 +185,7 @@ class bsub:
 
             bwait_task = task_dict.copy()
             bwait_task.update({
+                'basename': basename,
                 'actions': [f"bwait -w 'done(%(job_id)d)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)d.log"]
                            + task_dict["actions"][1:],  # bsub only works on the first action, others are followup/cleanup
                 'getargs': {'job_id': (f"bsub_{task_name}", 'job_id')},
