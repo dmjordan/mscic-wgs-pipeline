@@ -193,8 +193,19 @@ class bsub:
             })
             yield bwait_task
 
-    def get_bsub_command(self, cmd):
-        return self.bsub_command_template.format_map(attr.asdict(self)) + + shlex.quote(cmd)
+    def get_bsub_invocation(self):
+        return f"bsub -q {self.queue} " \
+                    f"-P {self.project} " \
+                    f"-W {self.time} " \
+                    f"-n {self.cpus} " \
+                    f"-R rusage[mem={self.mem_gb}G] " \
+                    f"{'-R himem ' if self.himem else ''}" \
+                    f"-J {self.job_name} " \
+                    f"-oo {self.job_name}.%J.log " \
+                    f"{'< ' if self.script else ''} "
+
+    def format_bsub_command(self, cmd):
+        return self.get_bsub_invocation() + shlex.quote(cmd)
 
     def __call__(self, f):
         return decorate(f, self.bsubify_tasks)
@@ -207,7 +218,7 @@ class BsubAction(CmdAction):
 
     def expand_action(self):
         expanded_action = super().expand_action()
-        return self.bsub_obj.get_bsub_command(expanded_action)
+        return self.bsub_obj.format_bsub_command(expanded_action)
 
     def execute(self, out=None, err=None):
         result = super().execute(out, err)
@@ -236,8 +247,8 @@ class bsub_hail(bsub):
         --executor-memory {mem_gb-4}G \
         --driver-memory {mem_gb-4}G """
 
-    def get_bsub_command(self, cmd):
-        return (self.bsub_command_template.format_map(attr.asdict(self)) +
+    def format_bsub_command(self, cmd):
+        return (self.get_bsub_invocation() +
                 shlex.quote(self.hail_submit_script.format_map(attr.asdict(self)) + cmd))
 
 
