@@ -174,10 +174,11 @@ class bsub:
                 raise ValueError("Task defined without task_ function name needs a basename")
             task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
             job_name = task_name.replace(":", "_")
+            bsub_action = BsubAction(self, task_dict["actions"][0])
             bsub_task = {
                 "basename": f"bsub_{basename}",
-                "actions": [BsubAction(self, task_dict["actions"][0])],
-                "teardown": [f"bkill -J {job_name} 0"]
+                "actions": [bsub_action],
+                "teardown": [bsub_action.kill_me]
             }
             if "name" in task_dict:
                 bsub_task["name"] = task_dict["name"]
@@ -229,6 +230,13 @@ class BsubAction(CmdAction):
             action = self.expand_action()  # recreate action string for error message
             return TaskFailed(f"{action}")
         self.values["job_id"] = match.group(1)
+
+    def kill_me(self):
+        try:
+            job_id = self.values["job_id"]
+        except KeyError:
+            return
+        subprocess.run(f"bkill {job_id}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class bsub_hail(bsub):
