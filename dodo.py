@@ -141,41 +141,72 @@ DOIT_CONFIG = {'check_file_uptodate': MD5DirectoryChecker,
                }
 
 
-@attr.s(auto_attribs=True, init=False, kw_only=True)
-class BsubAction(CmdAction):
-    job_name: str
-    script: bool
-    time: str
-    mem: str
-    cpus: str = attr.ib(converter=str)
-    himem: bool
-    queue: str
-    project: str
+@attr.s(auto_attribs=True)
+class bsub:
+    time: str = "12:00"
+    mem_gb: int = 8
+    cpus: int = 1
+    himem: bool = False
+    queue: str = "premium"
+    project: str = "acc_mscic"
 
     bsub_command_template: ClassVar[str] = "bsub -q {queue} " \
-                                                "-P {project} " \
-                                                "-W {time} " \
-                                                "-n {cpus} " \
-                                                "-R rusage[mem={mem}] " \
-                                                "{'-R himem ' if himem else ''}" \
-                                                "-J {job_name} " \
-                                                "-oo {job_name}.%J.log " \
-                                                "{'< ' if script else ''} "
+                                           "-P {project} " \
+                                           "-W {time} " \
+                                           "-n {cpus} " \
+                                           "-R rusage[mem={mem_gb}G] " \
+                                           "{'-R himem ' if himem else ''}" \
+                                           "-J {job_name} " \
+                                           "-oo {job_name}.%J.log " \
+                                           "{'< ' if script else ''} "
 
-    def __init__(self, *args, **kwargs):
-        attrs_kwargs = {}
-        for attrib in attr.fields(type(self)):
-            if attrib.name in kwargs:
-                attrs_kwargs[attrib.name] = kwargs.pop(attrib.name)
+    def bsubify_tasks(self, f, *args, **kwargs):
+        if f.__name__.startswith("task_"):
+            func_basename = f.__name__[5:]
+        else:
+            func_basename = None  # hopefully doit will deal appropriately with None where a basename is needed
+        for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
+            if task_dict["actions"] is None:
+                yield task_dict
+                continue
+            basename = task_dict.get("basename", func_basename)
+            if basename is None:
+                raise ValueError("Task defined without task_ function name needs a basename")
+            task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
+            job_name = task_name.replace(":", "_")
+            bsub_task = {
+                "basename": f"bsub_{basename}",
+                "actions": [BsubAction(self, task_dict["actions"][0])],
+                "teardown": [f"bkill -J {job_name} 0"]
+            }
+            if "name" in task_dict:
+                bsub_task["name"] = task_dict["name"]
+            yield bsub_task
+
+            bwait_task = task_dict.copy()
+            bwait_task.update({
+                'actions': [f"bwait -w 'done(%(job_id)d)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)d.log"]
+                           + task_dict["actions"][1:],  # bsub only works on the first action, others are followup/cleanup
+                'getargs': {'job_id': (f"bsub_{task_name}", 'job_id')},
+                'setup': [f"bsub_{task_name}"]
+            })
+            yield bwait_task
+
+    def get_bsub_command(self, cmd):
+        return self.bsub_command_template.format_map(attr.asdict(self)) + + shlex.quote(cmd)
+
+    def __call__(self, f):
+        return decorate(f, self.bsubify_tasks)
+
+
+class BsubAction(CmdAction):
+    def __init__(self, bsub_obj: bsub, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__attrs_init__(**attrs_kwargs)
+        self.bsub_obj = bsub_obj
 
     def expand_action(self):
-        bsub_command = self.bsub_command_template.format_map(attr.asdict(self))
         expanded_action = super().expand_action()
-        if not self.script:
-            expanded_action = shlex.quote(expanded_action)
-        return bsub_command + expanded_action
+        return self.bsub_obj.get_bsub_command(expanded_action)
 
     def execute(self, out=None, err=None):
         result = super().execute(out, err)
@@ -187,81 +218,27 @@ class BsubAction(CmdAction):
             return TaskFailed(f"{action}")
         self.values["job_id"] = match.group(1)
 
-    def do_bwait(self, job_name, job_id):
-        if subprocess.call(["bwait", "-w", f"done({job_id})"]) != 0:
-            # check if there's a log file with success
-            # this happens when it's been too long between submission and retrieval
-            try:
-                with open(f"{job_name}.{job_id}.log") as logfile:
-                    header_line = logfile.readline()
-                    status_line = logfile.readline()
-                    if not status_line.strip().endswith("Done"):
-                        return False
-            except IOError:
-                return False
-        return {'last_succeeded': job_id}
 
-    def do_bkill(self, job_id):
-        bjobs_output = subprocess.check_output(f"bjobs {job_id}", shell=True, text=True)
-        if bjobs_output.strip() != f"Job <{job_id}> is not found":
-            subprocess.call(f"bkill {job_id}", shell=True)
+class bsub_hail(bsub):
+    hail_submit_script: ClassVar[str] = """ml spark/2.4.5
+    ml -python
+    export HAIL_HOME={sysconfig.get_path("purelib")}/hail
+    export SPARK_LOG_DIR=/sc/arion/projects/mscic1/scratch/hail/logs/
+    export SPARK_WORKER_DIR=/sc/arion/projects/mscic1/scratch/hail/worker/
+    
+    lsf-spark-submit.sh \
+        --jars $HAIL_HOME/backend/hail-all-spark.jar \
+        --conf spark.driver.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
+        --conf spark.executor.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
+        --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+        --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
+        --executor-memory {mem_gb-4}G \
+        --driver-memory {mem_gb-4}G """
 
+    def get_bsub_command(self, cmd):
+        return (self.bsub_command_template.format_map(attr.asdict(self)) +
+                shlex.quote(self.hail_submit_script.format_map(attr.asdict(self)) + cmd))
 
-@decorator
-def bsub(f, *args,
-         script=False, time="12:00", mem="8G", cpus="1", himem=False, queue="premium", project="acc_mscic",
-         **kwargs):
-    if f.__name__.startswith("task_"):
-        func_basename = f.__name__[5:]
-    else:
-        func_basename = None  # hopefully doit will deal appropriately with None where a basename is needed
-    for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
-        if task_dict["actions"] is None:
-            yield task_dict
-            continue
-        basename = task_dict.get("basename", func_basename)
-        if basename is None:
-            raise ValueError("Task defined without task_ function name needs a basename")
-        task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
-        job_name = task_name.replace(":", "_")
-        if len(task_dict["actions"]) != 1 or not isinstance(task_dict["actions"][0], str):
-            raise ValueError("I only know how to bsub a single string command")
-        bsub_task = {
-                        "basename": f"bsub_{basename}",
-                        "actions": [BsubAction(task_dict["actions"][0],
-                                               job_name=job_name,
-                                               script=script, time=time, mem=mem, cpus=cpus,
-                                               himem=himem, queue=queue, project=project)],
-                        "teardown": [f"bkill -J {job_name} 0"]
-                    }
-        if "name" in task_dict:
-            bsub_task["name"] = task_dict["name"]
-        yield bsub_task
-
-        bwait_task = task_dict.copy()
-        bwait_task.update({
-            'actions':  [f"bwait -w 'done(%(job_id)d)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)d.log"],
-            'getargs':  {'job_id': (f"bsub_{task_name}", 'job_id')},
-            'setup':    [f"bsub_{task_name}"]
-        })
-        yield bwait_task
-
-
-hail_submit_script = f"""
-ml spark/2.4.5
-ml -python
-export HAIL_HOME={sysconfig.get_path("purelib")}/hail
-export SPARK_LOG_DIR=/sc/arion/projects/mscic1/scratch/hail/logs/
-export SPARK_WORKER_DIR=/sc/arion/projects/mscic1/scratch/hail/worker/
-
-lsf-spark-submit.sh \
-    --jars $HAIL_HOME/backend/hail-all-spark.jar \
-    --conf spark.driver.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
-    --conf spark.executor.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
-    --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
-    --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
-    --executor-memory {{mem - 4}}G \
-    --driver-memory {{mem - 4}}G """
 
 def task_initialize_hail():
     os.environ["HAIL_HOME"] = str(Path(sysconfig.get_path("purelib")) / "hail")
@@ -295,19 +272,20 @@ def clean_dir_targets(task):
                 warnings.warn(f"clean_dir_targets found target {target!s} still existing, but it is not a directory")
 
 
+@bsub_hail(cpus=256)
 def task_vcf2mt():
     return {
-        "actions": [(hail_wgs.convert_vcf_to_mt, [vcf_path, mt_path])],
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-vcf-to-mt {vcf_path} {mt_path}"],
         "targets": [mt_path],
         "file_dep": [vcf_path],
-        "setup": ["initialize_hail"],
         "clean": [clean_dir_targets]
     }
 
 
+@bsub_hail(cpus=256)
 def task_qc():
     return {
-        "actions": [(hail_wgs.run_hail_qc, [mt_path])],
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} run-hail-qc {mt_path}"],
         "targets": [qc_path,
                     mt_path.with_suffix(".sample_qc.callrate_hist.png"),
                     mt_path.with_suffix(".sample_qc.gq_hist.png"),
@@ -317,35 +295,33 @@ def task_qc():
                     mt_path.with_suffix(".variant_qc.gq_hist.png"),
                     mt_path.with_suffix(".variant_qc.dp_hist.png"),
                     mt_path.with_suffix(".variant_qc.dp_v_callrate_scatter.png")],
-        "file_dep": [mt_path],
-        "setup": ["initialize_hail"],
+        "file_dep": [mt_path]
         "clean": [clean_targets, clean_dir_targets]
     }
 
 
+@bsub_hail(cpus=256)
 def task_match_samples():
     return {
-        "actions": [(hail_wgs.match_samples, [covariates_path, qc_path])],
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} match-samples {covariates_path} {qc_path}"],
         "targets": [sample_matched_path],
         "file_dep": [covariates_path, qc_path],
-        "setup": ["initialize_hail"],
         "clean": [clean_dir_targets]
     }
 
 
+@bsub_hail(cpus=256)
 def task_mt2plink():
     for endpoint_name, endpoint_mtfile in vcf_endpoints.items():
         for name, mtfile in [(f"{endpoint_name}_chr{chrom}", endpoint_mtfile.with_suffix(f".chr{chrom}.mt")) for chrom in list(range(1,23)) + ["X"]] + [(endpoint_name, endpoint_mtfile)]:
             yield {
                 "name": name,
-                "actions": [(hail_wgs.convert_mt_to_plink, [mtfile]),
-                            [Path("/usr/bin/sed"),
-                             "-i", "s/^chr//", mtfile.with_suffix(".bim")]],
+                "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-plink {mtfile}",
+                            f"sed -i s/^chr// {mtfile.with_suffix('.bim')}"],
                 "file_dep": [mtfile],
                 "targets": [mtfile.with_suffix(".bed"),
                             mtfile.with_suffix(".bim"),
                             mtfile.with_suffix(".fam")],
-                "setup": ["initialize_hail"],
                 "clean": True
             }
 
@@ -367,6 +343,7 @@ def task_king():
     }
 
 
+@bsub_hail(cpus=256)
 def task_gwas_filter():
     for subset, input_path in [("all", sample_matched_path),
                                ("white", white_only_path),
@@ -375,14 +352,14 @@ def task_gwas_filter():
                                ("asian", asian_only_path)]:
         yield {
             "name": subset,
-            "actions": [(hail_wgs.gwas_filter, [input_path])],
+            "actions": [f"{scriptsdir / 'hail_wgs.py'} gwas-filter {input_path}"],
             "file_dep": [input_path],
             "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
-            "setup": ["initialize_hail"],
             "clean": [clean_dir_targets]
         }
 
 
+@bsub_hail(cpus=256)
 def task_ld_prune():
     for subset, input_path in [("all", gwas_filtered_path),
                                ("white", white_gwas_path),
@@ -391,10 +368,9 @@ def task_ld_prune():
                                ("asian", asian_gwas_path)]:
         yield {
             "name": subset,
-            "actions": [(hail_wgs.ld_prune, [input_path])],
+            "actions": [f"{scriptsdir / 'hail_wgs.py'} ld-prune {input_path}"],
             "file_dep": [input_path],
             "targets": [input_path.with_suffix(".LD_pruned.mt")],
-            "setup": ["initialize_hail"],
             "clean": [clean_dir_targets]
         }
 
@@ -455,6 +431,7 @@ def task_race_prediction():
             }
 
 
+@bsub_hail(cpus=256)
 def task_split_races():
     for name, mtfile in [("full", sample_matched_path),
                          ("ld", ld_pruned_path)]:
@@ -463,10 +440,9 @@ def task_split_races():
             outfile = mtfile.with_suffix(f".{race}_only.mt")
             yield {
                 "name": f"{race.lower()}_{name}",
-                "actions": [(hail_wgs.subset_mt_samples, [mtfile, listfile, outfile])],
+                "actions": [f"{scriptsdir / 'hail_wgs.py'} subset-mt-samples {mtfile} {listfile} {outfile}"],
                 "file_dep": [mtfile, listfile],
                 "targets": [outfile],
-                "setup": ["initialize_hail"],
                 "clean": [clean_dir_targets]
             }
 
@@ -496,15 +472,15 @@ def task_pcrelate():
     }
 
 
+@bsub_hail(cpus=256)
 def task_mt2vcfshards():
     for name, mtfile in vcf_endpoints.items():
         output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
         yield {
             "name": name,
-            "actions": [(hail_wgs.convert_mt_to_vcf_shards, [mtfile, vcf_path])],
+            "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-vcf-shards {mtfile} {vcf_path}"],
             "file_dep": [mtfile],
             "targets": [output_vcf_dir],
-            "setup": ["initialize_hail"],
             "clean": [clean_dir_targets]
         }
 
@@ -524,7 +500,7 @@ def task_build_vcf():
         }
 
 
-@bsub(mem="16G", cpus=128)
+@bsub(mem_gb=16, cpus=128)
 def task_null_model():
     for phenotype in get_phenotypes_list():
         yield {
@@ -579,7 +555,7 @@ def task_gwas_to_run():
     }
 
 
-@bsub(mem="16G", cpus=256)
+@bsub(mem_gb=16, cpus=256)
 def task_vcf2gds_shards():
     for name, mtfile in vcf_endpoints.items():
         vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
@@ -594,7 +570,7 @@ def task_vcf2gds_shards():
         }
 
 
-@bsub(cpus=128, mem="16G")
+@bsub(cpus=128, mem_gb=16)
 def task_run_gwas():
     for phenotype in get_phenotypes_list():
         yield {
@@ -644,22 +620,22 @@ def task_gwas_plots():
     }
 
 
+@bsub_hail(cpus=256)
 def task_vep():
     return {
-        "actions": [(hail_wgs.run_vep, [sample_matched_path])],
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} run-vep {sample_matched_path}"],
         "file_dep": [sample_matched_path, "/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json"],
-        "targets": [vep_path],
-        "setup": ["initialize_hail"],
+        "targets": [vep_path]
         "clean": [clean_dir_targets]
     }
 
 
+@bsub_hail(cpus=256)
 def task_lof_filter():
     return {
-        "actions": [(hail_wgs.filter_lof_hc, [vep_path])],
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-lof-hc {vep_path}"],
         "file_dep": [vep_path],
         "targets": [lof_filtered_path],
-        "setup": ["initialize_hail"],
         "clean": [clean_dir_targets]
     }
 
@@ -760,7 +736,7 @@ def task_munge_sumstats():
      }
 
 
-@bsub(mem="16G")
+@bsub(mem_gb=16)
 def task_ld_score_regression():
     ldscore_path = gwas_filtered_path.with_suffix(".ld_chr")
     for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
@@ -783,7 +759,7 @@ def task_ld_score_regression():
             "task_dep": [f"ld_score_regression:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(traits_of_interest, 2)]
             }
 
-@bsub(mem="20G")
+@bsub(mem_gb=20)
 def task_metaxcan_harmonize():
     gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
     metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
@@ -858,7 +834,7 @@ def task_s_predixcan():
         "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
     }
 
-@bsub(mem="8G")
+@bsub(mem_gb=8)
 def task_s_multixcan():
     s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMulTiXcan.py"
     metaxcan_data_dir = Path("../../resources/metaxcan_data").resolve()
