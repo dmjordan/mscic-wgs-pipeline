@@ -247,6 +247,22 @@ def bsub(f, *args,
         yield bwait_task
 
 
+hail_submit_script = f"""
+ml spark/2.4.5
+ml -python
+export HAIL_HOME={sysconfig.get_path("purelib")}/hail
+export SPARK_LOG_DIR=/sc/arion/projects/mscic1/scratch/hail/logs/
+export SPARK_WORKER_DIR=/sc/arion/projects/mscic1/scratch/hail/worker/
+
+lsf-spark-submit.sh \
+    --jars $HAIL_HOME/backend/hail-all-spark.jar \
+    --conf spark.driver.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
+    --conf spark.executor.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
+    --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
+    --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
+    --executor-memory {{mem - 4}}G \
+    --driver-memory {{mem - 4}}G """
+
 def task_initialize_hail():
     os.environ["HAIL_HOME"] = str(Path(sysconfig.get_path("purelib")) / "hail")
     if "LSB_JOBID" in os.environ:
