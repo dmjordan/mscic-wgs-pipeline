@@ -1,18 +1,21 @@
 import sys, os, re, subprocess, socket, sysconfig, shutil, shlex, itertools, warnings, inspect
 import attr, more_itertools
-from typing import Union
+from typing import Union, ClassVar
 from pathlib import Path
 
 import rpy2.rinterface_lib.embedded
 from doit.dependency import MD5Checker
+from doit.exceptions import TaskFailed
 from doit.task import clean_targets
+from doit.action import CmdAction
+import doit
 from doit import create_after
 import doit.globals
 import hail as hl
 from rpy2.robjects import r
 import rpy2.robjects as ro
 import rpy2.rinterface as ri
-from decorator import decorate
+from decorator import decorate, decorator
 import logging
 
 scriptsdir = Path("../../scripts/WGS/").resolve()
@@ -138,26 +141,51 @@ DOIT_CONFIG = {'check_file_uptodate': MD5DirectoryChecker,
                }
 
 
-@attr.s(auto_attribs=True)
-class bsub:
-    basename: str = None
-    time: str = "12:00"
-    mem: str = "8G"
-    cpus: str = attr.ib(default="1", converter=str)
-    himem: bool = False
-    queue: str = "premium"
-    project: str = "acc_mscic"
+@attr.s(auto_attribs=True, init=False, kw_only=True)
+class BsubAction(CmdAction):
+    job_name: str
+    script: bool
+    time: str
+    mem: str
+    cpus: str = attr.ib(converter=str)
+    himem: bool
+    queue: str
+    project: str
 
-    def do_bsub(self, cmd, job_name):
-        himem_flag = "-R himem" if self.himem else ""
-        bsub_command = f"bsub -q {self.queue} -P {self.project} -W {self.time} -n {self.cpus} -R rusage[mem={self.mem}] {himem_flag} -J {job_name} -oo {job_name}.%J.log"
-        if isinstance(cmd, Path):
-            output = subprocess.check_output(bsub_command + " < " + str(cmd), shell=True, text=True)
-        else:
-            output = subprocess.check_output(bsub_command + " " + shlex.quote(cmd), shell=True, text=True)
-        match = re.match(r"^Job <(\d+)> is submitted to queue <\w+>.$", output)
-        self.job_id = match.group(1)
-        return { 'job_id': self.job_id }
+    bsub_command_template: ClassVar[str] = "bsub -q {queue} " \
+                                                "-P {project} " \
+                                                "-W {time} " \
+                                                "-n {cpus} " \
+                                                "-R rusage[mem={mem}] " \
+                                                "{'-R himem ' if himem else ''}" \
+                                                "-J {job_name} " \
+                                                "-oo {job_name}.%J.log " \
+                                                "{'< ' if script else ''} "
+
+    def __init__(self, *args, **kwargs):
+        attrs_kwargs = {}
+        for attrib in attr.fields(type(self)):
+            if attrib.name in kwargs:
+                attrs_kwargs[attrib.name] = kwargs.pop(attrib.name)
+        super().__init__(*args, **kwargs)
+        self.__attrs_init__(**attrs_kwargs)
+
+    def expand_action(self):
+        bsub_command = self.bsub_command_template.format_map(attr.asdict(self))
+        expanded_action = super().expand_action()
+        if not self.script:
+            expanded_action = shlex.quote(expanded_action)
+        return bsub_command + expanded_action
+
+    def execute(self, out=None, err=None):
+        result = super().execute(out, err)
+        if result is not None:
+            return result
+        match = re.match(r"^Job <(\d+)> is submitted to queue <\w+>.$", self.out)
+        if match is None:
+            action = self.expand_action()  # recreate action string for error message
+            return TaskFailed(f"{action}")
+        self.values["job_id"] = match.group(1)
 
     def do_bwait(self, job_name, job_id):
         if subprocess.call(["bwait", "-w", f"done({job_id})"]) != 0:
@@ -171,41 +199,52 @@ class bsub:
                         return False
             except IOError:
                 return False
-        return { 'last_succeeded': job_id }
+        return {'last_succeeded': job_id}
 
     def do_bkill(self, job_id):
         bjobs_output = subprocess.check_output(f"bjobs {job_id}", shell=True, text=True)
         if bjobs_output.strip() != f"Job <{job_id}> is not found":
             subprocess.call(f"bkill {job_id}", shell=True)
 
-    def bsubify_tasks(self, f, *args, **kwargs):
-        for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
-            if task_dict["actions"] is None:
-                yield task_dict
-                continue
 
-            basename = task_dict.get("basename", self.basename)
-            task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
-            bsub_task = {   
-                            "basename": f"bsub_{basename}",
-                            "actions": [(self.do_bsub, [" ; ".join(task_dict["actions"]), task_name])]   
-                        }
-            if "name" in task_dict:
-                bsub_task["name"] = task_dict["name"]
-            yield bsub_task
+@decorator
+def bsub(f, *args,
+         script=False, time="12:00", mem="8G", cpus="1", himem=False, queue="premium", project="acc_mscic",
+         **kwargs):
+    if f.__name__.startswith("task_"):
+        func_basename = f.__name__[5:]
+    else:
+        func_basename = None  # hopefully doit will deal appropriately with None where a basename is needed
+    for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
+        if task_dict["actions"] is None:
+            yield task_dict
+            continue
+        basename = task_dict.get("basename", func_basename)
+        if basename is None:
+            raise ValueError("Task defined without task_ function name needs a basename")
+        task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
+        job_name = task_name.replace(":", "_")
+        if len(task_dict["actions"]) != 1 or not isinstance(task_dict["actions"][0], str):
+            raise ValueError("I only know how to bsub a single string command")
+        bsub_task = {
+                        "basename": f"bsub_{basename}",
+                        "actions": [BsubAction(task_dict["actions"][0],
+                                               job_name=job_name,
+                                               script=script, time=time, mem=mem, cpus=cpus,
+                                               himem=himem, queue=queue, project=project)],
+                        "teardown": [f"bkill -J {job_name} 0"]
+                    }
+        if "name" in task_dict:
+            bsub_task["name"] = task_dict["name"]
+        yield bsub_task
 
-            bwait_task = task_dict.copy() 
-            bwait_task.update({
-                'basename': basename,
-                'actions':  [(self.do_bwait, [task_name])],
-                'getargs':  {'job_id': (f"bsub_{task_name}", 'job_id')},
-                'setup':    [f"bsub_{task_name}"],
-                'teardown': [self.do_bkill]
-            })
-            yield bwait_task
-
-    def __call__(self, f):
-        return decorate(f, self.bsubify_tasks)
+        bwait_task = task_dict.copy()
+        bwait_task.update({
+            'actions':  [f"bwait -w 'done(%(job_id)d)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)d.log"],
+            'getargs':  {'job_id': (f"bsub_{task_name}", 'job_id')},
+            'setup':    [f"bsub_{task_name}"]
+        })
+        yield bwait_task
 
 
 def task_initialize_hail():
@@ -469,7 +508,7 @@ def task_build_vcf():
         }
 
 
-@bsub("null_model", mem="16G", cpus=128)
+@bsub(mem="16G", cpus=128)
 def task_null_model():
     for phenotype in get_phenotypes_list():
         yield {
@@ -524,7 +563,7 @@ def task_gwas_to_run():
     }
 
 
-@bsub("vcf2gds_shards", mem="16G", cpus=256)
+@bsub(mem="16G", cpus=256)
 def task_vcf2gds_shards():
     for name, mtfile in vcf_endpoints.items():
         vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
@@ -539,7 +578,7 @@ def task_vcf2gds_shards():
         }
 
 
-@bsub("run_gwas", cpus=128, mem="16G")
+@bsub(cpus=128, mem="16G")
 def task_run_gwas():
     for phenotype in get_phenotypes_list():
         yield {
@@ -656,7 +695,7 @@ def task_split_chromosomes():
         }
 
 
-@bsub("ld_scores")
+@bsub
 def task_ld_scores():
     ldsc_path = gwas_filtered_path.with_suffix(".ld_chr")
     ldsc_path.mkdir(exist_ok=True)
@@ -682,7 +721,7 @@ def task_ld_scores():
             }
 
 
-@bsub("munge_sumstats")
+@bsub
 def task_munge_sumstats():
     for phenotype in get_phenotypes_list():
         assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
@@ -705,7 +744,7 @@ def task_munge_sumstats():
      }
 
 
-@bsub("ld_score_regression", mem="16G")
+@bsub(mem="16G")
 def task_ld_score_regression():
     ldscore_path = gwas_filtered_path.with_suffix(".ld_chr")
     for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
@@ -728,7 +767,7 @@ def task_ld_score_regression():
             "task_dep": [f"ld_score_regression:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(traits_of_interest, 2)]
             }
 
-@bsub("metaxcan_harmonize", mem="20G")
+@bsub(mem="20G")
 def task_metaxcan_harmonize():
     gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
     metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
@@ -760,7 +799,7 @@ def task_metaxcan_harmonize():
         }
 
 
-@bsub("s_predixcan")
+@bsub
 def task_s_predixcan():
     s_predixcan_script = scriptsdir / "MetaXcan" / "software" / "SPrediXcan.py"
     gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
@@ -803,7 +842,7 @@ def task_s_predixcan():
         "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
     }
 
-@bsub("s_multixcan", mem="8G")
+@bsub(mem="8G")
 def task_s_multixcan():
     s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMulTiXcan.py"
     metaxcan_data_dir = Path("../../resources/metaxcan_data").resolve()
