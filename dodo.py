@@ -295,7 +295,7 @@ def task_qc():
                     mt_path.with_suffix(".variant_qc.gq_hist.png"),
                     mt_path.with_suffix(".variant_qc.dp_hist.png"),
                     mt_path.with_suffix(".variant_qc.dp_v_callrate_scatter.png")],
-        "file_dep": [mt_path]
+        "file_dep": [mt_path],
         "clean": [clean_targets, clean_dir_targets]
     }
 
@@ -625,7 +625,7 @@ def task_vep():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} run-vep {sample_matched_path}"],
         "file_dep": [sample_matched_path, "/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json"],
-        "targets": [vep_path]
+        "targets": [vep_path],
         "clean": [clean_dir_targets]
     }
 
