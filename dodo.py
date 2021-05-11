@@ -174,7 +174,7 @@ class bsub:
                 raise ValueError("Task defined without task_ function name needs a basename")
             task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
             job_name = task_name.replace(":", "_")
-            bsub_action = BsubAction(self, task_dict["actions"][0])
+            bsub_action = BsubAction(job_name, self, task_dict["actions"][0])
             bsub_task = {
                 "basename": f"bsub_{basename}",
                 "actions": [bsub_action],
@@ -194,32 +194,32 @@ class bsub:
             })
             yield bwait_task
 
-    def get_bsub_invocation(self):
+    def get_bsub_invocation(self, job_name):
         return f"bsub -q {self.queue} " \
                     f"-P {self.project} " \
                     f"-W {self.time} " \
                     f"-n {self.cpus} " \
                     f"-R rusage[mem={self.mem_gb}G] " \
                     f"{'-R himem ' if self.himem else ''}" \
-                    f"-J {self.job_name} " \
-                    f"-oo {self.job_name}.%J.log " \
-                    f"{'< ' if self.script else ''} "
+                    f"-J {job_name} " \
+                    f"-oo {job_name}.%J.log "
 
-    def format_bsub_command(self, cmd):
-        return self.get_bsub_invocation() + shlex.quote(cmd)
+    def format_bsub_command(self, cmd, job_name):
+        return self.get_bsub_invocation(job_name) + shlex.quote(cmd)
 
     def __call__(self, f):
         return decorate(f, self.bsubify_tasks)
 
 
 class BsubAction(CmdAction):
-    def __init__(self, bsub_obj: bsub, *args, **kwargs):
+    def __init__(self, job_name: str, bsub_obj: bsub, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.job_name = job_name
         self.bsub_obj = bsub_obj
 
     def expand_action(self):
         expanded_action = super().expand_action()
-        return self.bsub_obj.format_bsub_command(expanded_action)
+        return self.bsub_obj.format_bsub_command(expanded_action, self.job_name)
 
     def execute(self, out=None, err=None):
         result = super().execute(out, err)
@@ -255,8 +255,8 @@ class bsub_hail(bsub):
         --executor-memory {mem_gb-4}G \
         --driver-memory {mem_gb-4}G """
 
-    def format_bsub_command(self, cmd):
-        return (self.get_bsub_invocation() +
+    def format_bsub_command(self, cmd, job_name):
+        return (self.get_bsub_invocation(job_name) +
                 shlex.quote(self.hail_submit_script.format_map(attr.asdict(self)) + cmd))
 
 
