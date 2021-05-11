@@ -187,7 +187,7 @@ class bsub:
             bwait_task = task_dict.copy()
             bwait_task.update({
                 'basename': basename,
-                'actions': [f"bwait -w 'done(%(job_id)d)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)d.log"]
+                'actions': [f"bwait -w 'done(%(job_id)s)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)s.log"]
                            + task_dict["actions"][1:],  # bsub only works on the first action, others are followup/cleanup
                 'getargs': {'job_id': (f"bsub_{task_name}", 'job_id')},
                 'setup': [f"bsub_{task_name}"]
@@ -236,11 +236,11 @@ class BsubAction(CmdAction):
             job_id = self.values["job_id"]
         except KeyError:
             return
-        subprocess.run(f"bkill {job_id}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(f"bkill {job_id}", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=True)
 
 
 class bsub_hail(bsub):
-    def format_bsub_command(self, cmd):
+    def format_bsub_command(self, cmd, job_name):
         hail_submit_script = f"""ml spark/2.4.5
         ml -python
         export HAIL_HOME={sysconfig.get_path("purelib")}/hail
@@ -256,7 +256,7 @@ class bsub_hail(bsub):
         --executor-memory {self.mem_gb-4}G \
         --driver-memory {self.mem_gb-4}G {cmd}"""
 
-        return self.get_bsub_invocation() + shlex.quote(hail_submit_script)
+        return self.get_bsub_invocation(job_name) + shlex.quote(hail_submit_script)
 
 
 def task_initialize_hail():
