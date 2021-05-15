@@ -1,22 +1,28 @@
-import sys, os, re, subprocess, socket, sysconfig, shutil, shlex, itertools, warnings, inspect
-import attr, more_itertools
-from typing import Union, ClassVar
+import itertools
+import os
+import re
+import shlex
+import shutil
+import socket
+import subprocess
+import sys
+import sysconfig
+import warnings
 from pathlib import Path
+from typing import ClassVar
 
+import attr
+import hail as hl
+import more_itertools
+import rpy2.rinterface as ri
 import rpy2.rinterface_lib.embedded
+import rpy2.robjects as ro
+from decorator import decorate
+from doit.action import CmdAction
 from doit.dependency import MD5Checker
 from doit.exceptions import TaskFailed
 from doit.task import clean_targets
-from doit.action import CmdAction
-import doit
-from doit import create_after
-import doit.globals
-import hail as hl
 from rpy2.robjects import r
-import rpy2.robjects as ro
-import rpy2.rinterface as ri
-from decorator import decorate, decorator
-import logging
 
 scriptsdir = Path("../../scripts/WGS/").resolve()
 sys.path.append(str(scriptsdir))
