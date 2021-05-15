@@ -68,6 +68,7 @@ sample_matched_path = qc_path.with_suffix(".sample_matched.mt")
 vep_path = sample_matched_path.with_suffix(".VEP.mt")
 lof_filtered_path = vep_path.with_suffix(".LOF_filtered.mt")
 gwas_filtered_path = sample_matched_path.with_suffix(".GWAS_filtered.mt")
+rare_filtered_path = sample_matched_path.with_suffix(".rare_filtered.mt")
 ld_pruned_path = gwas_filtered_path.with_suffix(".LD_pruned.mt")
 white_only_path = sample_matched_path.with_suffix(".WHITE_only.mt")
 black_only_path = sample_matched_path.with_suffix(".BLACK_only.mt")
@@ -387,6 +388,22 @@ def task_gwas_filter():
         }
 
 
+@bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
+def task_rare_filter():
+    for subset, input_path in [("all", sample_matched_path),
+                               ("white", white_only_path),
+                               ("black", black_only_path),
+                               ("hispanic", hispanic_only_path),
+                               ("asian", asian_only_path)]:
+        yield {
+            "name": subset,
+            "actions": [f"{scriptsdir / 'hail_wgs.py'} rare-filter {input_path}"],
+            "file_dep": [input_path],
+            "targets": [input_path.with_suffix(".rare_filtered.mt")],
+            "clean": [clean_dir_targets]
+        }
+
+
 @bsub_hail(cpus=128)
 def task_ld_prune():  # takes about 20 minutes on 128 cores (for all)
     for subset, input_path in [("all", gwas_filtered_path),
@@ -689,25 +706,30 @@ def task_build_seq_gds():
 
 
 def task_run_smmat():
-    for phenotype in get_phenotypes_list():
+    for filter in "lof", "rare":
+        for phenotype in get_phenotypes_list():
+            if filter == "lof":
+                mtfile = lof_filtered_path
+            else:
+                mtfile = rare_filtered_path
+            yield {
+                "name": f"{phenotype}_{filter}",
+                "actions": [(wrap_r_function("run_smmat"), [mtfile.with_suffix(".seq.gds"),
+                                                            sample_matched_path.with_suffix(f".{phenotype}.null.RDS"),
+                                                            f"{phenotype}.{filter}"])],
+                "targets": [f"{phenotype}.{filter}.GENESIS.SMMAT.assoc.txt",
+                            f"{phenotype}.{filter}.GENESIS.SMMAT.manhattan.png",
+                            f"{phenotype}.{filter}.GENESIS.SMMAT.qq.png"],
+                "file_dep": [mtfile.with_suffix(".seq.gds"),
+                             sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+                "setup": ["initialize_r"],
+                "clean": True
+            }
         yield {
-            "name": phenotype,
-            "actions": [(wrap_r_function("run_smmat"), [lof_filtered_path.with_suffix(".seq.gds"),
-                                                        sample_matched_path.with_suffix(f".{phenotype}.null.RDS"),
-                                                        phenotype])],
-            "targets": [f"{phenotype}.GENESIS.SMMAT.assoc.txt",
-                        f"{phenotype}.GENESIS.SMMAT.manhattan.png",
-                        f"{phenotype}.GENESIS.SMMAT.qq.png"],
-            "file_dep": [lof_filtered_path.with_suffix(".seq.gds"),
-                         sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
-            "setup": ["initialize_r"],
-            "clean": True
-        }
-    yield {
-         "name": "traits_of_interest",
-         "actions": None,
-         "task_dep": [f"run_smmat:{phenotype}" for phenotype in traits_of_interest]
-     }
+             "name": f"traits_of_interest_{filter}",
+             "actions": None,
+             "task_dep": [f"run_smmat:{phenotype}_{filter}" for phenotype in traits_of_interest]
+         }
 
     
 def task_split_chromosomes():
