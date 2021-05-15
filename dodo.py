@@ -731,16 +731,16 @@ def task_run_smmat():
              "task_dep": [f"run_smmat:{phenotype}_{filter}" for phenotype in traits_of_interest]
          }
 
-    
+
+@bsub_hail(cpus=128)
 def task_split_chromosomes():
     for name, mtfile in vcf_endpoints.items():
         yield {
             "name": name,
-            "actions":  [(hail_wgs.split_chromosomes, [mtfile])],
+            "actions":  [f"{scriptsdir / 'hail_wgs.py'} split-chromosomes {mtfile}"],
             "file_dep": [mtfile],
             "targets":  [mtfile.with_suffix(f".chr{chr}.mt") for chr in list(range(1,23)) + ['X']],
-            "clean":    [clean_dir_targets],
-            "setup":    ["initialize_hail"]
+            "clean":    [clean_dir_targets]
         }
 
 
