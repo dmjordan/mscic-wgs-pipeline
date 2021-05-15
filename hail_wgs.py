@@ -7,7 +7,13 @@ import hail as hl
 from bokeh.io import export_png
 
 
-cli = click.Group("hail-wgs")
+#cli = click.Group("hail-wgs")
+@click.group("hail-wgs")
+def cli():
+    tmp_path = "/sc/arion/projects/mscic1/scratch/hail/tmp/"
+    hl.init(tmp_dir=tmp_path, min_block_size=128, local_tmpdir="/local/tmp/",
+                log=hl.utils.timestamp_path(os.path.join(os.environ["SPARK_LOG_DIR"], 'hail')))
+
 # creating commands manually so that the python functions are still callable
 
 class ClickPathlibPath(click.Path):
@@ -76,7 +82,7 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False):
         vcf = vcf.annotate_rows(info=new_info)
 
     vcf.write(str(mt_path.resolve()), overwrite=True)
-cli.add_command(click.Command("convert-vcf-to-mt", convert_vcf_to_mt,
+cli.add_command(click.Command("convert-vcf-to-mt", None, convert_vcf_to_mt,
                               [click.Argument(["vcf_path"], type=ClickPathlibPath()),
                                click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Option(["--filter-multi/--allow-multi"], default=False)]))
@@ -111,7 +117,7 @@ def run_hail_qc(mt_path):
     mt_filtered = mt_filtered.filter_rows((mt_filtered.variant_qc.dp_stats.mean > 25) & (mt_filtered.variant_qc.call_rate > 0.9) & (mt_filtered.variant_qc.gq_stats.mean > 40))
     print('After applying sample and variant QC, {0}/{1} variants remain.'.format(mt_filtered.count_rows(), mt.count_rows()), file=sys.stderr)
     mt_filtered.write(str(mt_path.with_suffix(".QC_filtered.mt")), overwrite=True)
-cli.add_command(click.Command("run-hail-qc", run_hail_qc,
+cli.add_command(click.Command("run-hail-qc", None, run_hail_qc,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
@@ -151,7 +157,7 @@ def match_samples(covariates_path, mt_path):
         (~sex_table.is_female & (sex_table.reported.sex != "Male")))
     mt = mt.anti_join_cols(mismatched_sex)
     mt.write(str(output_path), overwrite=True)
-cli.add_command(click.Command("match-samples", match_samples,
+cli.add_command(click.Command("match-samples", None, match_samples,
                               [click.Argument(["covariates_path"], type=ClickPathlibPath()),
                                click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
@@ -162,7 +168,7 @@ def gwas_filter(mt_path):
     mt = hl.variant_qc(mt)
     mt = mt.filter_rows(mt.variant_qc.AF.all(lambda af: af > 0.01) & (mt.variant_qc.p_value_hwe > 1e-6))
     mt.write(str(mt_path.with_suffix(".GWAS_filtered.mt")), overwrite=True)
-cli.add_command(click.Command("gwas-filter", gwas_filter,
+cli.add_command(click.Command("gwas-filter", None, gwas_filter,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
@@ -172,7 +178,7 @@ def ld_prune(mt_path):
     pruned_variant_table = hl.ld_prune(mt.GT, r2=0.2, bp_window_size=500000)
     mt = mt.filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]))
     mt.write(str(mt_path.with_suffix(".LD_pruned.mt")), overwrite=True)
-cli.add_command(click.Command("ld-prune", ld_prune,
+cli.add_command(click.Command("ld-prune", None, ld_prune,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
@@ -185,7 +191,7 @@ def convert_mt_to_vcf_shards(mt_path, original_vcf_path):
     rows = mt.count_rows()
     mt = mt.repartition(1000) 
     hl.export_vcf(mt, str(output_vcf_dir), tabix=True, parallel="header_per_shard", metadata=vcf_metadata)
-cli.add_command(click.Command("convert-mt-to-vcf-shards", convert_mt_to_vcf_shards,
+cli.add_command(click.Command("convert-mt-to-vcf-shards", None, convert_mt_to_vcf_shards,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["original_vcf_path"], type=ClickPathlibPath())]))
 
@@ -194,7 +200,7 @@ def convert_mt_to_plink(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     hl.export_plink(mt, str(mt_path.with_suffix("")), fam_id=mt.s, ind_id=mt.s)
-cli.add_command(click.Command("convert-mt-to-plink", convert_mt_to_plink,
+cli.add_command(click.Command("convert-mt-to-plink", None, convert_mt_to_plink,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 def subset_mt_samples(mt_path, indiv_list, out_path):
@@ -203,7 +209,7 @@ def subset_mt_samples(mt_path, indiv_list, out_path):
     indiv_list_table = hl.import_table(str(indiv_list)).key_by("Subject_ID")
     mt = mt.semi_join_cols(indiv_list_table)
     mt.write(str(out_path.resolve()), overwrite=True)
-cli.add_command(click.Command("subset-mt-samples", subset_mt_samples,
+cli.add_command(click.Command("subset-mt-samples", None, subset_mt_samples,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["indiv_list"], type=ClickPathlibPath()),
                                click.Argument(["out_path"], type=ClickPathlibPath())]))
@@ -213,7 +219,7 @@ def run_vep(mt_path):
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.vep(mt, config="/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json")
     mt.write(str(mt_path.with_suffix(".VEP.mt")))
-cli.add_command(click.Command("run-vep", run_vep,
+cli.add_command(click.Command("run-vep", None, run_vep,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 def filter_lof_hc(mt_path):
@@ -221,7 +227,7 @@ def filter_lof_hc(mt_path):
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.lof == "HC"))
     mt.write(str(mt_path.with_suffix(".LOF_filtered.mt")))
-cli.add_command(click.Command("filter-lof-hc", filter_lof_hc,
+cli.add_command(click.Command("filter-lof-hc", None, filter_lof_hc,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
@@ -231,7 +237,7 @@ def split_chromosomes(mt_path):
     for chrom in [f"chr{i}" for i in range(1,23)] + ["chrX"]:
         mt_filtered = mt.filter_rows(mt.locus.contig == chrom)
         mt_filtered.write(str(mt_path.with_suffix(f".{chrom}.mt")), overwrite=True)
-cli.add_command(click.Command("split-chromosomes", split_chromosomes,
+cli.add_command(click.Command("split-chromosomes", None, split_chromosomes,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 

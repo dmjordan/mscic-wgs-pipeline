@@ -241,16 +241,19 @@ class BsubAction(CmdAction):
 
 class bsub_hail(bsub):
     def format_bsub_command(self, cmd, job_name):
-        hail_submit_script = f"""ml spark/2.4.5
+        hail_submit_script = f"""ml spark/2.4.5 java
         ml -python
         export HAIL_HOME={sysconfig.get_path("purelib")}/hail
+        export SPARK_LOCAL_DIRS=/local/tmp/
         export SPARK_LOG_DIR=/sc/arion/projects/mscic1/scratch/hail/logs/
         export SPARK_WORKER_DIR=/sc/arion/projects/mscic1/scratch/hail/worker/
+        export LD_PRELOAD=/usr/lib64/libgslcblas.so
         
         lsf-spark-submit.sh \
         --jars $HAIL_HOME/backend/hail-all-spark.jar \
         --conf spark.driver.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
         --conf spark.executor.extraClassPath=$HAIL_HOME/backend/hail-all-spark.jar \
+        --conf spark.executor.extraJavaOptions='-Djava.io.tmpdir=/local/tmp' \
         --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
         --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
         --executor-memory {self.mem_gb-4}G \
@@ -291,7 +294,7 @@ def clean_dir_targets(task):
                 warnings.warn(f"clean_dir_targets found target {target!s} still existing, but it is not a directory")
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128)  # takes about 45 minutes on 128 cores
 def task_vcf2mt():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-vcf-to-mt {vcf_path} {mt_path}"],
@@ -301,7 +304,7 @@ def task_vcf2mt():
     }
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128)  # takes about 40 minutes on 128 cores
 def task_qc():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} run-hail-qc {mt_path}"],
@@ -319,7 +322,7 @@ def task_qc():
     }
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128)  # takes about 15 minutes on 128 cores
 def task_match_samples():
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} match-samples {covariates_path} {qc_path}"],
@@ -329,7 +332,7 @@ def task_match_samples():
     }
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128)  # takes about 10 minutes on 128 cores (for full)
 def task_mt2plink():
     for endpoint_name, endpoint_mtfile in vcf_endpoints.items():
         for name, mtfile in [(f"{endpoint_name}_chr{chrom}", endpoint_mtfile.with_suffix(f".chr{chrom}.mt")) for chrom in list(range(1,23)) + ["X"]] + [(endpoint_name, endpoint_mtfile)]:
@@ -362,7 +365,7 @@ def task_king():
     }
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
 def task_gwas_filter():
     for subset, input_path in [("all", sample_matched_path),
                                ("white", white_only_path),
@@ -379,7 +382,7 @@ def task_gwas_filter():
 
 
 @bsub_hail(cpus=128)
-def task_ld_prune():
+def task_ld_prune():  # takes about 20 minutes on 128 cores (for all)
     for subset, input_path in [("all", gwas_filtered_path),
                                ("white", white_gwas_path),
                                ("black", black_gwas_path),
@@ -450,7 +453,7 @@ def task_race_prediction():
             }
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128) 
 def task_split_races():
     for name, mtfile in [("full", sample_matched_path),
                          ("ld", ld_pruned_path)]:
@@ -491,7 +494,7 @@ def task_pcrelate():
     }
 
 
-@bsub_hail(cpus=128)
+@bsub_hail(cpus=128)  # takes about 20 minutes on 128 cores (for full)
 def task_mt2vcfshards():
     for name, mtfile in vcf_endpoints.items():
         output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
@@ -634,6 +637,13 @@ def task_gwas_plots():
         "name": "blood_viral_load",
         "actions": [(wrap_r_function("make_gwas_plots"), [bvl_traits])],
         "task_dep": ["run_gwas:blood_viral_load"],
+        "setup": ["initialize_r"],
+        "clean": ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
+    }
+    yield {
+        "name": "traits_of_interest",
+        "actions": [(wrap_r_function("make_gwas_plots"), [traits_of_interest])],
+        "task_dep": ["run_gwas:traits_of_interest"],
         "setup": ["initialize_r"],
         "clean": ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
     }
