@@ -705,7 +705,7 @@ def task_build_seq_gds():
             }
 
 
-@bsub
+@bsub()
 def task_run_smmat():
     for filter in "lof", "rare":
         for phenotype in get_phenotypes_list():
@@ -715,8 +715,8 @@ def task_run_smmat():
                 mtfile = rare_filtered_path
             yield {
                 "name": f"{phenotype}_{filter}",
-                "actions": [f"Rscript run_smmat.R {mtfile.with_suffix('.seq.gds')} "
-                                                        f"sample_matched_path.with_suffix('').{phenotype}.null.RDS) "
+                "actions": [f"Rscript {scriptsdir / 'run_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
+                                                        f"{sample_matched_path.with_suffix('')}.{phenotype}.null.RDS "
                                                         f"{phenotype}.{filter}"],
                 "targets": [f"{phenotype}.{filter}.GENESIS.SMMAT.assoc.txt",
                             f"{phenotype}.{filter}.GENESIS.SMMAT.manhattan.png",

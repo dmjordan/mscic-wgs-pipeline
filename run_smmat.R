@@ -1,6 +1,6 @@
-source("seqarray_genesis.R")
-
-start_cluster()
+args <- commandArgs(trailingOnly = F)  
+scriptPath <- normalizePath(sub("^--file=", "", args[grep("^--file=", args)]))
+source(file.path(dirname(scriptPath), "seqarray_genesis.R"))
 
 args <- commandArgs(trailingOnly=TRUE)
 gds_filename <- args[[1]]
