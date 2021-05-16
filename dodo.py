@@ -78,6 +78,10 @@ white_gwas_path = white_only_path.with_suffix(".GWAS_filtered.mt")
 black_gwas_path = black_only_path.with_suffix(".GWAS_filtered.mt")
 asian_gwas_path = asian_only_path.with_suffix(".GWAS_filtered.mt")
 hispanic_gwas_path = hispanic_only_path.with_suffix(".GWAS_filtered.mt")
+white_rare_path = white_only_path.with_suffix(".rare_filtered.mt")
+black_rare_path = black_only_path.with_suffix(".rare_filtered.mt")
+asian_rare_path = asian_only_path.with_suffix(".rare_filtered.mt")
+hispanic_rare_path = hispanic_only_path.with_suffix(".rare_filtered.mt")
 white_ld_path = ld_pruned_path.with_suffix(".WHITE_only.mt")
 black_ld_path = ld_pruned_path.with_suffix(".BLACK_only.mt")
 asian_ld_path = ld_pruned_path.with_suffix(".ASIAN_only.mt")
@@ -86,6 +90,7 @@ hispanic_ld_path = ld_pruned_path.with_suffix(".HISPANIC_only.mt")
 vcf_endpoints = {"full": sample_matched_path,
                  "lof": lof_filtered_path,
                  "gwas": gwas_filtered_path,
+                 "rare": rare_filtered_path,
                  "ld": ld_pruned_path,
                  "white_full": white_only_path,
                  "black_full": black_only_path,
@@ -95,6 +100,10 @@ vcf_endpoints = {"full": sample_matched_path,
                  "black_gwas": black_gwas_path,
                  "hispanic_gwas": hispanic_gwas_path,
                  "asian_gwas": asian_gwas_path,
+                 "white_rare": white_rare_path,
+                 "black_rare": black_rare_path,
+                 "hispanic_rare": hispanic_rare_path,
+                 "asian_rare": asian_rare_path,
                  "white_ld": white_ld_path,
                  "black_ld": black_ld_path,
                  "hispanic_ld": hispanic_ld_path,
