@@ -178,11 +178,14 @@ class bsub:
                                            "{'< ' if script else ''} "
 
     def __new__(cls, *args, **kwargs):
+        obj = super().__new__(cls)
         # @bsub is syntactic sugar for @bsub()
         if len(args) == 1 and inspect.isfunction(args[0]):
-            return super().__new__(cls)(args[0])
+            obj.__init__()
+            return obj(args[0])
         else:
-            return super().__new__(cls, *args, **kwargs)
+            obj.__init__(*args, **kwargs)
+            return obj
 
     def bsubify_tasks(self, f, *args, **kwargs):
         if f.__name__.startswith("task_"):
