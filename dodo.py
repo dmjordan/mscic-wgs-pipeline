@@ -62,6 +62,7 @@ def wrap_r_function(funcname):
 r.source(scriptsdir / "seqarray_genesis.R")
 
 vcf_path = Path('/sc/arion/projects/mscic1/techdev.incoming/DNA/all_625_samples_cohort_vcf/625_Samples.cohort.vcf.gz')
+exome_bed_path = Path("padded_Twist_ComprehensiveExome_targets_hg38.bed").resolve()
 
 mt_path = Path(vcf_path.stem).with_suffix(".mt")
 qc_path = mt_path.with_suffix(".QC_filtered.mt")
@@ -70,6 +71,7 @@ vep_path = sample_matched_path.with_suffix(".VEP.mt")
 lof_filtered_path = vep_path.with_suffix(".LOF_filtered.mt")
 gwas_filtered_path = sample_matched_path.with_suffix(".GWAS_filtered.mt")
 rare_filtered_path = sample_matched_path.with_suffix(".rare_filtered.mt")
+exome_filtered_path = sample_matched_path.with_suffix(".exome_filtered.mt")
 ld_pruned_path = gwas_filtered_path.with_suffix(".LD_pruned.mt")
 white_only_path = sample_matched_path.with_suffix(".WHITE_only.mt")
 black_only_path = sample_matched_path.with_suffix(".BLACK_only.mt")
@@ -83,6 +85,10 @@ white_rare_path = white_only_path.with_suffix(".rare_filtered.mt")
 black_rare_path = black_only_path.with_suffix(".rare_filtered.mt")
 asian_rare_path = asian_only_path.with_suffix(".rare_filtered.mt")
 hispanic_rare_path = hispanic_only_path.with_suffix(".rare_filtered.mt")
+white_exome_path = white_only_path.with_suffix(".exome_filtered.mt")
+black_exome_path = black_only_path.with_suffix(".exome_filtered.mt")
+asian_exome_path = asian_only_path.with_suffix(".exome_filtered.mt")
+hispanic_exome_path = hispanic_only_path.with_suffix(".exome_filtered.mt")
 white_ld_path = ld_pruned_path.with_suffix(".WHITE_only.mt")
 black_ld_path = ld_pruned_path.with_suffix(".BLACK_only.mt")
 asian_ld_path = ld_pruned_path.with_suffix(".ASIAN_only.mt")
@@ -92,6 +98,7 @@ vcf_endpoints = {"full": sample_matched_path,
                  "lof": lof_filtered_path,
                  "gwas": gwas_filtered_path,
                  "rare": rare_filtered_path,
+                 "exome": exome_filtered_path,
                  "ld": ld_pruned_path,
                  "white_full": white_only_path,
                  "black_full": black_only_path,
@@ -105,6 +112,10 @@ vcf_endpoints = {"full": sample_matched_path,
                  "black_rare": black_rare_path,
                  "hispanic_rare": hispanic_rare_path,
                  "asian_rare": asian_rare_path,
+                 "white_exome": white_exome_path,
+                 "black_exome": black_exome_path,
+                 "hispanic_exome": hispanic_exome_path,
+                 "asian_exome": asian_exome_path,
                  "white_ld": white_ld_path,
                  "black_ld": black_ld_path,
                  "hispanic_ld": hispanic_ld_path,
@@ -420,6 +431,23 @@ def task_rare_filter():
             "actions": [f"{scriptsdir / 'hail_wgs.py'} rare-filter {input_path}"],
             "file_dep": [input_path],
             "targets": [input_path.with_suffix(".rare_filtered.mt")],
+            "clean": [clean_dir_targets]
+        }
+
+
+@bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
+def task_exome_filter():
+    for subset, input_path in [("all", sample_matched_path),
+                               ("white", white_only_path),
+                               ("black", black_only_path),
+                               ("hispanic", hispanic_only_path),
+                               ("asian", asian_only_path)]:
+        output_path = input_path.with_suffix(".exome_filtered.mt")
+        yield {
+            "name": subset,
+            "actions": [f"{scriptsdir / 'hail_wgs.py'} restrict-to-bed {input_path} {exome_bed_path} {output_path}"],
+            "file_dep": [input_path],
+            "targets": [output_path],
             "clean": [clean_dir_targets]
         }
 
