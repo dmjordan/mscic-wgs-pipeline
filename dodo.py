@@ -436,7 +436,7 @@ def task_initialize_r():
     }
 
 
-def task_build_snp_gds():
+def task_plink2snpgds():
     for name, mtfile in vcf_endpoints.items():
         output_gds = mtfile.with_suffix(".snp.gds")
         yield {
@@ -610,7 +610,7 @@ def task_gwas_to_run():
 
 
 @bsub(mem_gb=16, cpus=128)
-def task_vcf2gds_shards():
+def task_vcf2seqgds_shards():
     for name, mtfile in vcf_endpoints.items():
         vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
         gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
@@ -701,16 +701,16 @@ def task_lof_filter():
     }
 
 
-def task_build_seq_gds():
+@bsub(cpus=64)
+def task_vcf2seqgds_single():
     for name, mtfile in vcf_endpoints.items():
-        gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
+        vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
         output_gds = mtfile.with_suffix(".seq.gds")
         yield {
             "name":     name,
-            "actions":  [wrap_r_function("build_seq_gds")],
-            "file_dep": [gds_shards_dir],
-            "targets":  [output_gds],
-            "setup":    ["initialize_r"]
+            "actions":  [f"Rscript {scriptsdir / 'seqvcf2gds.R'} {vcf_shards_dir} {output_gds}"],
+            "file_dep": [vcf_shards_dir],
+            "targets":  [output_gds]
             }
 
 
