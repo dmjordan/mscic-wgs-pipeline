@@ -36,7 +36,7 @@ alleles <- seqGetData(f, "allele")
 seqClose(f)
 alleles <- str_replace(alleles, ",", ":")
 variant_id <- str_glue("chr{chr}:{pos}:{alleles}")
-setVariantID(file.path(gdsShardsDir, gdsFile), variant_id)
+setVariantID(gdsFile, variant_id)
 
 stopCluster(cl)
 
