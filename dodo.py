@@ -1,3 +1,4 @@
+import inspect
 import itertools
 import os
 import re
@@ -175,6 +176,13 @@ class bsub:
                                            "-J {job_name} " \
                                            "-oo {job_name}.%J.log " \
                                            "{'< ' if script else ''} "
+
+    def __new__(cls, *args, **kwargs):
+        # @bsub is syntactic sugar for @bsub()
+        if len(args) == 1 and inspect.isfunction(args[0]):
+            return super().__new__()(args[0])
+        else:
+            return super().__new__(*args, **kwargs)
 
     def bsubify_tasks(self, f, *args, **kwargs):
         if f.__name__.startswith("task_"):
@@ -714,7 +722,7 @@ def task_vcf2seqgds_single():
             }
 
 
-@bsub()
+@bsub
 def task_run_smmat():
     for filter in "lof", "rare":
         for phenotype in get_phenotypes_list():
