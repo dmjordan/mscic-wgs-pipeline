@@ -176,7 +176,7 @@ def rare_filter(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.variant_qc(mt)
-    mt = mt.filter_rows(mt.variant_qc.AF.any(lambda af: af < 0.01))
+    mt = mt.filter_rows(mt.variant_qc.AC.any(lambda ac: ac == 1))
     mt.write(str(mt_path.with_suffix(".rare_filtered.mt")), overwrite=True)
 cli.add_command(click.Command("rare-filter", None, rare_filter,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
