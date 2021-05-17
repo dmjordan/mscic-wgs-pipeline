@@ -180,9 +180,9 @@ class bsub:
     def __new__(cls, *args, **kwargs):
         # @bsub is syntactic sugar for @bsub()
         if len(args) == 1 and inspect.isfunction(args[0]):
-            return super().__new__()(args[0])
+            return super().__new__(cls)(args[0])
         else:
-            return super().__new__(*args, **kwargs)
+            return super().__new__(cls, *args, **kwargs)
 
     def bsubify_tasks(self, f, *args, **kwargs):
         if f.__name__.startswith("task_"):
