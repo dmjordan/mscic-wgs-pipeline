@@ -15,7 +15,7 @@ foreach(vcfFile=vcfFiles,
         .options.mpi=list(chunkSize=vcfChunkSize),
         .errorhandling="stop") %dopar% {
     gdsFile <- sub("\\.bgz$", ".seq.gds", vcfFile)
-    seqVCF2GDS(file.path(vcfShardsDir, vcfFile), file.path(gdsShardsDir, gdsFile))
+    seqVCF2GDS(file.path(vcfShardsDir, vcfFile), file.path(gdsShardsDir, gdsFile), ignore.chr.prefix="")
     # create a nice variant id
     f <- seqOpen(file.path(gdsShardsDir, gdsFile))
     #rsid <- seqGetData(f, "annotation/id")
@@ -24,7 +24,7 @@ foreach(vcfFile=vcfFiles,
     alleles <- seqGetData(f, "allele")
     seqClose(f)
     alleles <- str_replace(alleles, ",", ":")
-    variant_id <- str_glue("chr{chr}:{pos}:{alleles}")
+    variant_id <- str_glue("{chr}:{pos}:{alleles}")
     setVariantID(file.path(gdsShardsDir, gdsFile), variant_id)  # ifelse(rsid != "", rsid, variant_id))
 }
 

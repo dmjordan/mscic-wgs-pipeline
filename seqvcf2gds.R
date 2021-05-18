@@ -9,13 +9,13 @@ if (length(hosts) > 1) {
     if (length(hosts) > 65) {
       warning("parallel can't use more than 64 hosts; found ", length(hosts))
     }
-    cluster_hosts <- hosts[2:min(length(hosts), 65)]
+    cluster_hosts <- hosts[1:min(length(hosts), 64)]
     cl <<- makeCluster(cluster_hosts, rshcmd="blaunch")
     message("running on a psock cluster with ", length(cl), " hosts")
 
 } else {
     num_cores <- length(mcaffinity())
-    cl <<- makeCluster(num_cores - 1)
+    cl <<- makeCluster(num_cores)
     message("running on a fork cluster with ", length(cl), " cores")
 }
 
@@ -26,7 +26,7 @@ gdsFile <- args[[2]]
 
 # do the conversion
 vcfFiles <- list.files(vcfShardsDir, "part-[0-9]{5}\\.bgz$", full.names=TRUE)
-seqVCF2GDS(vcfFiles, gdsFile, parallel=cl)
+seqVCF2GDS(vcfFiles, gdsFile, parallel=cl, header=seqVCF_Header(vcfFiles[[1]]), ignore.chr.prefix="")
 
 # create a nice variant id
 f <- seqOpen(gdsFile)
@@ -35,7 +35,7 @@ pos <- seqGetData(f, "position")
 alleles <- seqGetData(f, "allele")
 seqClose(f)
 alleles <- str_replace(alleles, ",", ":")
-variant_id <- str_glue("chr{chr}:{pos}:{alleles}")
+variant_id <- str_glue("{chr}:{pos}:{alleles}")
 setVariantID(gdsFile, variant_id)
 
 stopCluster(cl)
