@@ -417,6 +417,11 @@ def task_gwas_filter():
             "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
             "clean": [clean_dir_targets]
         }
+    yield { 
+        "name": "race_split",
+        "actions": None,
+        "task_dep": [f"gwas_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
+        }
 
 
 @bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
@@ -433,9 +438,14 @@ def task_rare_filter():
             "targets": [input_path.with_suffix(".rare_filtered.mt")],
             "clean": [clean_dir_targets]
         }
+    yield { 
+        "name": "race_split",
+        "actions": None,
+        "task_dep": [f"rare_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
+        }
 
 
-@bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
+@bsub_hail(cpus=128, mem_gb=12) # takes about 10 minutes on 128 cores (for all)
 def task_exome_filter():
     for subset, input_path in [("all", sample_matched_path),
                                ("white", white_only_path),
@@ -449,6 +459,11 @@ def task_exome_filter():
             "file_dep": [input_path],
             "targets": [output_path],
             "clean": [clean_dir_targets]
+        }
+    yield { 
+        "name": "race_split",
+        "actions": None,
+        "task_dep": [f"exome_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
         }
 
 
@@ -465,6 +480,11 @@ def task_ld_prune():  # takes about 20 minutes on 128 cores (for all)
             "file_dep": [input_path],
             "targets": [input_path.with_suffix(".LD_pruned.mt")],
             "clean": [clean_dir_targets]
+        }
+    yield { 
+        "name": "race_split",
+        "actions": None,
+        "task_dep": [f"ld_prune:{race}" for race in ("white", "black", "hispanic", "asian")]
         }
 
 
@@ -507,6 +527,11 @@ def task_pcair():
                          sample_matched_path.with_suffix(".kin0")],
             "setup": ["initialize_r"],
             "clean": True
+        }
+    yield { 
+        "name": "race_split",
+        "actions": None,
+        "task_dep": [f"pcair:{race}" for race in ("white", "black", "hispanic", "asian")]
         }
 
 
