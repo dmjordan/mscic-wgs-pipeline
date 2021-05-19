@@ -763,7 +763,7 @@ def task_run_smmat():
                 mtfile = rare_filtered_path
             yield {
                 "name": f"{phenotype}_{filter}",
-                "actions": [f"Rscript {scriptsdir / 'run_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
+                "actions": [f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
                                                         f"{sample_matched_path.with_suffix('')}.{phenotype}.null.RDS "
                                                         f"{phenotype}.{filter}"],
                 "targets": [f"{phenotype}.{filter}.GENESIS.SMMAT.assoc.txt",
