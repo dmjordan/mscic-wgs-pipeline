@@ -256,7 +256,7 @@ def restrict_to_bed(mt_path, bed_path, out_mt_path):
     mt = hl.read_matrix_table(str(mt_path.resolve()))
     mt = mt.filter_rows(hl.is_defined(interval_table[mt.locus]))
     mt.write(str(out_mt_path.resolve()))
-cli.add_command(click.Command("restrict_to_bed", None, restrict_to_bed,
+cli.add_command(click.Command("restrict-to-bed", None, restrict_to_bed,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["bed_path"], type=ClickPathlibPath()),
                                click.Argument(["out_mt_path"], type=ClickPathlibPath())]))
