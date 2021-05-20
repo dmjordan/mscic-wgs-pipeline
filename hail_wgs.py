@@ -228,7 +228,7 @@ def run_vep(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.vep(mt, config="/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json")
-    mt.write(str(mt_path.with_suffix(".VEP.mt")))
+    mt.write(str(mt_path.with_suffix(".VEP.mt")), overwrite=True)
 cli.add_command(click.Command("run-vep", None, run_vep,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
@@ -236,7 +236,7 @@ def filter_lof_hc(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.lof == "HC"))
-    mt.write(str(mt_path.with_suffix(".LOF_filtered.mt")))
+    mt.write(str(mt_path.with_suffix(".LOF_filtered.mt")), overwrite=True)
 cli.add_command(click.Command("filter-lof-hc", None, filter_lof_hc,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
@@ -255,7 +255,7 @@ def restrict_to_bed(mt_path, bed_path, out_mt_path):
     interval_table = hl.import_bed(str(bed_path.resolve()), reference_genome='GRCh38')
     mt = hl.read_matrix_table(str(mt_path.resolve()))
     mt = mt.filter_rows(hl.is_defined(interval_table[mt.locus]))
-    mt.write(str(out_mt_path.resolve()))
+    mt.write(str(out_mt_path.resolve()), overwrite=True)
 cli.add_command(click.Command("restrict-to-bed", None, restrict_to_bed,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["bed_path"], type=ClickPathlibPath()),
