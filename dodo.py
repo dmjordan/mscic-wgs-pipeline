@@ -778,7 +778,7 @@ def task_vcf2seqgds_single():
             }
 
 
-@bsub
+@bsub(cpus=128, mem_gb=16)
 def task_run_smmat():
     for filter in "lof", "rare":
         for phenotype in get_phenotypes_list():

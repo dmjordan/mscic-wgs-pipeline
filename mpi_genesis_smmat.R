@@ -1,8 +1,9 @@
-suppressStartupMessages({
+suppressPackageStartupMessages({
   library(doMPI)
   library(SeqArray)
   library(SeqVarTools)
   library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+  library(tidyverse)
 })
 
 cl <- startMPIcluster()
@@ -27,11 +28,14 @@ assoc <- foreach(gRanges=splitGeneRanges,
                  seqIter <- SeqVarRangeIterator(seqData, gRanges)
 
                  assoc <- assocTestAggregate(seqIter, nullmod, sparse=FALSE, test="SMMAT")
-                 as_tibble(assoc$results, rownames="geneid") %>% add_column(chr=as.factor(seqnames(geneRanges)),
-                                                                            start=start(geneRanges),
-                                                                            end=end(geneRanges), .after="geneid")
+                 as_tibble(assoc$results, rownames="geneid") %>% add_column(chr=as.factor(seqnames(gRanges)),
+                                                                            start=start(gRanges),
+                                                                            end=end(gRanges), .after="geneid")
             }, finally=seqClose(gdsFile))
 }
 
-write_delim(assoc, paste(phenotype_name, 'GENESIS', 'SMMAT', 'assoc', 'txt', sep='.'))
+write_delim(assoc, paste(model_name, 'GENESIS', 'SMMAT', 'assoc', 'txt', sep='.'))
 
+closeCluster(cl)
+mpi.quit()
+NULL
