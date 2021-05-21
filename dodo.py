@@ -9,8 +9,10 @@ import subprocess
 import sys
 import sysconfig
 import warnings
+from collections import namedtuple
+from functools import wraps, update_wrapper
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, NamedTuple, List, Sequence, Optional, Protocol, Iterable, Any, Dict
 
 import attr
 import hail as hl
@@ -18,7 +20,8 @@ import more_itertools
 import rpy2.rinterface as ri
 import rpy2.rinterface_lib.embedded
 import rpy2.robjects as ro
-from decorator import decorate
+from decorator import decorate, decorator
+import wrapt
 from doit.action import CmdAction
 from doit.dependency import MD5Checker
 from doit.exceptions import TaskFailed
@@ -121,15 +124,118 @@ vcf_endpoints = {"full": sample_matched_path,
                  "hispanic_ld": hispanic_ld_path,
                  "asian_ld": asian_ld_path}
 
+
+def extract_basename(task_dict, f):
+    if "basename" in task_dict:
+        return task_dict["basename"]
+    elif f.__name__.startswith("task_"):
+        return f.__name__[5:]
+    else:
+        raise ValueError("Can't figure out basename")
+
+
+@attr.s
+class SubsetDecorator:
+    subsets: Dict[str, Dict[str, Any]] = attr.ib()
+    meta: Dict[str, Sequence[str]]
+
+    @subsets.validator
+    def check_subsets_keys(self, attribute: attr.Attribute, value: Dict[str, Dict[str, Any]]):
+        if not more_itertools.all_equal(len(argnames) for argnames in value.keys()):
+            raise ValueError(f"All values in {attribute.name} must have the same set of keys")
+        for argnames in value.keys():
+            self.argnames = argnames
+            break
+
+    def get_new_signature(self, f):
+        base_signature = inspect.signature(f)
+        new_params_dict = dict(base_signature.parameters)
+        for argname in self.argnames:
+            del new_params_dict[argname]
+        del new_params_dict["name"]
+        new_signature = base_signature.replace(parameters=new_params_dict.values())
+        return str(new_signature)
+
+    def wrapper(self, wrapped, instance, args, kwargs):
+        basename = self.get_basename(wrapped)
+        for label, args_dict in self.subsets.items():
+            yield wrapped(name=label, *args, **args_dict, **kwargs)
+        for label, others in self.meta.items():
+            yield {
+                'name': label,
+                'actions': None,
+                'task_dep': [f"{basename}:{other}" for other in others]
+            }
+
+    def get_basename(self, wrapped):
+        if not wrapped.__name__.startswith("task_"):
+            raise ValueError("Can't figure out basename")
+        basename = wrapped.__name__[5:]
+        return basename
+
+    def __call__(self, f):
+        signature = self.get_new_signature(f)
+        return wrapt.decorator(self.wrapper, adapter=signature)(f)
+
+
+each_subset = SubsetDecorator({label: {'mtfile': vcf_endpoints[label]} for label in vcf_endpoints} |
+                              {f"{label}_chr{chrom}": {'mtfile': vcf_endpoints[label].with_suffix(f".chr{chrom}.mt")}
+                                    for label, chrom in itertools.product(vcf_endpoints.keys(), itertools.chain(range(1,23), ['X']))},
+                              {f"{label}_race_split": [f"{label}_{race}" for race in ('white', 'black', 'asian', 'hispanic')]
+                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')} |
+                              {f"{label}_chrom_split": [f"{label}_chr{chrom}" for chrom in itertools.chain(range(1,23), ['X'])]
+                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')})
+
+
+def each_race(**kwargs):
+    return SubsetDecorator({race: {key: vcf_endpoints[f"{race}_{subset}"] for key, subset in kwargs} for race in ('white', 'black', 'hispanic', 'asian')},
+                           {"race_split": ('white', 'black', 'hispanic', 'asian')})
+
+
+class PhenotypeDecorator(SubsetDecorator):
+    @classmethod
+    def phenotypes_to_run(cls, task_name):
+        return {
+            'task_dep': [f"{task_name}:{phenotype}" for phenotype in get_succeeded_phenotypes()]
+        }
+
+    def wrapper(self, wrapped, instance, args, kwargs):
+        yield from self.wrapper(wrapped, instance, args, kwargs)
+        basename = self.get_basename(wrapped)
+        yield {
+            'name': 'phenotypes_to_run',
+            'actions': [(self.phenotypes_to_run, [basename])],
+            'task_dep': ['null_model:all']
+        }
+        yield {
+            'name': 'all',
+            'actions': None,
+            'calc_dep': [f"{basename}:phenotypes_to_run"]
+        }
+
+
+def get_phenotypes_list():
+    return build_design_matrix.all_phenotypes
+
+
+traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
+        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
+        "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
+bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
+
+
+each_phenotype_no_calcdep = SubsetDecorator({phenotype: {'phenotype': phenotype} for phenotype in get_phenotypes_list()},
+                                            {'traits_of_interest': traits_of_interest,
+                                             'blood_viral_load': bvl_traits})
+each_phenotype = PhenotypeDecorator({phenotype: {'phenotype': phenotype} for phenotype in get_phenotypes_list()},
+                                    {'traits_of_interest': traits_of_interest,
+                                     'blood_viral_load': bvl_traits})
+
+
 covariates_path = Path(
     "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/Biobank_clinical_data_table_by_blood_sample_deidentified_UNCONSENTED.csv.gz")
 design_matrix_path = Path(
     "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv")
-
-traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
-        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased", 
-        "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
-bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
 
 class MD5DirectoryChecker(MD5Checker):
     """Just like the default MD5Checker, but works for directories too.
@@ -371,19 +477,18 @@ def task_match_samples():
 
 
 @bsub_hail(cpus=128)  # takes about 10 minutes on 128 cores (for full)
-def task_mt2plink():
-    for endpoint_name, endpoint_mtfile in vcf_endpoints.items():
-        for name, mtfile in [(f"{endpoint_name}_chr{chrom}", endpoint_mtfile.with_suffix(f".chr{chrom}.mt")) for chrom in list(range(1,23)) + ["X"]] + [(endpoint_name, endpoint_mtfile)]:
-            yield {
-                "name": name,
-                "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-plink {mtfile}",
-                            f"sed -i s/^chr// {mtfile.with_suffix('.bim')}"],
-                "file_dep": [mtfile],
-                "targets": [mtfile.with_suffix(".bed"),
-                            mtfile.with_suffix(".bim"),
-                            mtfile.with_suffix(".fam")],
-                "clean": True
-            }
+@each_subset
+def task_mt2plink(name, mtfile):
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-plink {mtfile}",
+                    f"sed -i s/^chr// {mtfile.with_suffix('.bim')}"],
+        "file_dep": [mtfile],
+        "targets": [mtfile.with_suffix(".bed"),
+                    mtfile.with_suffix(".bim"),
+                    mtfile.with_suffix(".fam")],
+        "clean": True
+    }
 
 
 def task_king():
@@ -404,88 +509,52 @@ def task_king():
 
 
 @bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
-def task_gwas_filter():
-    for subset, input_path in [("all", sample_matched_path),
-                               ("white", white_only_path),
-                               ("black", black_only_path),
-                               ("hispanic", hispanic_only_path),
-                               ("asian", asian_only_path)]:
-        yield {
-            "name": subset,
-            "actions": [f"{scriptsdir / 'hail_wgs.py'} gwas-filter {input_path}"],
-            "file_dep": [input_path],
-            "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
-            "clean": [clean_dir_targets]
-        }
-    yield { 
-        "name": "race_split",
-        "actions": None,
-        "task_dep": [f"gwas_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
-        }
+@each_race(input_path='full')
+def task_gwas_filter(name, input_path):
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} gwas-filter {input_path}"],
+        "file_dep": [input_path],
+        "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
+        "clean": [clean_dir_targets]
+    }
 
 
 @bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
-def task_rare_filter():
-    for subset, input_path in [("all", sample_matched_path),
-                               ("white", white_only_path),
-                               ("black", black_only_path),
-                               ("hispanic", hispanic_only_path),
-                               ("asian", asian_only_path)]:
-        yield {
-            "name": subset,
-            "actions": [f"{scriptsdir / 'hail_wgs.py'} rare-filter {input_path}"],
-            "file_dep": [input_path],
-            "targets": [input_path.with_suffix(".rare_filtered.mt")],
-            "clean": [clean_dir_targets]
-        }
-    yield { 
-        "name": "race_split",
-        "actions": None,
-        "task_dep": [f"rare_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
-        }
+@each_race(input_path="full")
+def task_rare_filter(name, input_path):
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} rare-filter {input_path}"],
+        "file_dep": [input_path],
+        "targets": [input_path.with_suffix(".rare_filtered.mt")],
+        "clean": [clean_dir_targets]
+    }
 
 
 @bsub_hail(cpus=128, mem_gb=12) # takes about 10 minutes on 128 cores (for all)
-def task_exome_filter():
-    for subset, input_path in [("all", sample_matched_path),
-                               ("white", white_only_path),
-                               ("black", black_only_path),
-                               ("hispanic", hispanic_only_path),
-                               ("asian", asian_only_path)]:
-        output_path = input_path.with_suffix(".exome_filtered.mt")
-        yield {
-            "name": subset,
-            "actions": [f"{scriptsdir / 'hail_wgs.py'} restrict-to-bed {input_path} {exome_bed_path} {output_path}"],
-            "file_dep": [input_path],
-            "targets": [output_path],
-            "clean": [clean_dir_targets]
-        }
-    yield { 
-        "name": "race_split",
-        "actions": None,
-        "task_dep": [f"exome_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
-        }
+@each_race(input_path="full")
+def task_exome_filter(name, input_path):
+    output_path = input_path.with_suffix(".exome_filtered.mt")
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} restrict-to-bed {input_path} {exome_bed_path} {output_path}"],
+        "file_dep": [input_path],
+        "targets": [output_path],
+        "clean": [clean_dir_targets]
+    }
 
 
 @bsub_hail(cpus=128)
-def task_ld_prune():  # takes about 20 minutes on 128 cores (for all)
-    for subset, input_path in [("all", gwas_filtered_path),
-                               ("white", white_gwas_path),
-                               ("black", black_gwas_path),
-                               ("hispanic", hispanic_gwas_path),
-                               ("asian", asian_gwas_path)]:
-        yield {
-            "name": subset,
-            "actions": [f"{scriptsdir / 'hail_wgs.py'} ld-prune {input_path}"],
-            "file_dep": [input_path],
-            "targets": [input_path.with_suffix(".LD_pruned.mt")],
-            "clean": [clean_dir_targets]
-        }
-    yield { 
-        "name": "race_split",
-        "actions": None,
-        "task_dep": [f"ld_prune:{race}" for race in ("white", "black", "hispanic", "asian")]
-        }
+@each_race(input_path="full")
+def task_ld_prune(name, input_path):  # takes about 20 minutes on 128 cores (for all)
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} ld-prune {input_path}"],
+        "file_dep": [input_path],
+        "targets": [input_path.with_suffix(".LD_pruned.mt")],
+        "clean": [clean_dir_targets]
+    }
 
 
 def task_initialize_r():
@@ -495,44 +564,35 @@ def task_initialize_r():
     }
 
 
-def task_plink2snpgds():
-    for name, mtfile in vcf_endpoints.items():
-        output_gds = mtfile.with_suffix(".snp.gds")
-        yield {
-            "name": name,
-            "actions": [(wrap_r_function("build_snp_gds"), [mtfile.with_suffix("")])],
-            "file_dep": [mtfile.with_suffix(".bed"),
-                         mtfile.with_suffix(".bim"),
-                         mtfile.with_suffix(".fam")],
-            "targets": [output_gds],
-            "setup": ["initialize_r"],
-            "clean": True
-        }
+@each_subset
+def task_plink2snpgds(name, mtfile):
+    output_gds = mtfile.with_suffix(".snp.gds")
+    return {
+        "name": name,
+        "actions": [(wrap_r_function("build_snp_gds"), [mtfile.with_suffix("")])],
+        "file_dep": [mtfile.with_suffix(".bed"),
+                     mtfile.with_suffix(".bim"),
+                     mtfile.with_suffix(".fam")],
+        "targets": [output_gds],
+        "setup": ["initialize_r"],
+        "clean": True
+    }
 
 
-def task_pcair():
-    for race, inpath, outpath in [("all", ld_pruned_path, sample_matched_path),
-                                  ("white", white_ld_path, white_only_path),
-                                  ("black", black_ld_path, black_only_path),
-                                  ("hispanic", hispanic_ld_path, hispanic_only_path),
-                                  ("asian", asian_ld_path, asian_only_path)]:
-        yield {
-            "name": race,
-            "actions": [(wrap_r_function("run_pcair"), [inpath.with_suffix(".snp.gds"), outpath.with_suffix("")])],
-            "targets": [outpath.with_suffix(".PCAir.RDS"),
-                        outpath.with_suffix(".PCAir.txt")] +
-                       [outpath.with_suffix(f".PC{i}v{j}.pdf")
-                        for i, j in itertools.combinations(range(1, 11), 2)],
-            "file_dep": [inpath.with_suffix(".snp.gds"),
-                         sample_matched_path.with_suffix(".kin0")],
-            "setup": ["initialize_r"],
-            "clean": True
-        }
-    yield { 
-        "name": "race_split",
-        "actions": None,
-        "task_dep": [f"pcair:{race}" for race in ("white", "black", "hispanic", "asian")]
-        }
+@each_race(inpath="ld", outpath="full")
+def task_pcair(name, inpath, outpath):
+    return {
+        "name": name,
+        "actions": [(wrap_r_function("run_pcair"), [inpath.with_suffix(".snp.gds"), outpath.with_suffix("")])],
+        "targets": [outpath.with_suffix(".PCAir.RDS"),
+                    outpath.with_suffix(".PCAir.txt")] +
+                   [outpath.with_suffix(f".PC{i}v{j}.pdf")
+                    for i, j in itertools.combinations(range(1, 11), 2)],
+        "file_dep": [inpath.with_suffix(".snp.gds"),
+                     sample_matched_path.with_suffix(".kin0")],
+        "setup": ["initialize_r"],
+        "clean": True
+    }
 
 
 def task_race_prediction():
@@ -549,20 +609,23 @@ def task_race_prediction():
             }
 
 
-@bsub_hail(cpus=128) 
-def task_split_races():
-    for name, mtfile in [("full", sample_matched_path),
-                         ("ld", ld_pruned_path)]:
-        for race in ("WHITE", "BLACK", "HISPANIC", "ASIAN"):
-            listfile = f"{race}.indiv_list.txt"
-            outfile = mtfile.with_suffix(f".{race}_only.mt")
-            yield {
-                "name": f"{race.lower()}_{name}",
-                "actions": [f"{scriptsdir / 'hail_wgs.py'} subset-mt-samples {mtfile} {listfile} {outfile}"],
-                "file_dep": [mtfile, listfile],
-                "targets": [outfile],
-                "clean": [clean_dir_targets]
-            }
+@bsub_hail(cpus=128)
+@SubsetDecorator({f"{race}_{subset}": {'race': race.upper(),
+                                       'mtfile': vcf_endpoints[subset]}
+                  for race, subset in itertools.product(['full', 'ld'],
+                                                        ['white', 'black', 'hispanic', 'asian'])},
+                 {subset: [f"{race}_{subset}" for race in ('white', 'black', 'hispanic', 'asian')]
+                  for subset in ('full', 'ld')})
+def task_split_races(name, race, mtfile):
+    listfile = f"{race}.indiv_list.txt"
+    outfile = mtfile.with_suffix(f".{race}_only.mt")
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} subset-mt-samples {mtfile} {listfile} {outfile}"],
+        "file_dep": [mtfile, listfile],
+        "targets": [outfile],
+        "clean": [clean_dir_targets]
+    }
 
 
 def task_design_matrix():
@@ -573,10 +636,6 @@ def task_design_matrix():
                      "MSCIC_blood_viral_load_predictions.csv", scriptsdir / "build_design_matrix.py"],
         "clean": ["rm {design_matrix_path!s} *.dist.png"]
     }
-
-
-def get_phenotypes_list():
-    return build_design_matrix.all_phenotypes
 
 
 def task_pcrelate():
@@ -591,63 +650,45 @@ def task_pcrelate():
 
 
 @bsub_hail(cpus=128)  # takes about 20 minutes on 128 cores (for full)
-def task_mt2vcfshards():
-    for name, mtfile in vcf_endpoints.items():
-        output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
-        yield {
-            "name": name,
-            "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-vcf-shards {mtfile} {vcf_path}"],
-            "file_dep": [mtfile],
-            "targets": [output_vcf_dir],
-            "clean": [clean_dir_targets]
-        }
+@each_subset
+def task_mt2vcfshards(name, mtfile):
+    output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
+    return {
+        "name": name,
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-vcf-shards {mtfile} {vcf_path}"],
+        "file_dep": [mtfile],
+        "targets": [output_vcf_dir],
+        "clean": [clean_dir_targets]
+    }
 
 
-def task_build_vcf():
-    for name, mtfile in vcf_endpoints.items():
-        vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
-        output_vcf = mtfile.with_suffix(".vcf.bgz")
-        output_tbi = mtfile.with_suffix(".vcf.bgz.tbi")
-        yield {
-            "name": name,
-            "actions": [f"ml bcftools && bcftools concat --naive -Oz -o {output_vcf!s} {vcf_shards_dir!s}/part-*.bgz",
-                        f"ml htslib && tabix {output_vcf!s}"],
-            "file_dep": [vcf_shards_dir],
-            "targets": [output_vcf, output_tbi],
-            "clean": True
-        }
+@each_subset
+def task_build_vcf(name, mtfile):
+    vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
+    output_vcf = mtfile.with_suffix(".vcf.bgz")
+    output_tbi = mtfile.with_suffix(".vcf.bgz.tbi")
+    return {
+        "name": name,
+        "actions": [f"ml bcftools && bcftools concat --naive -Oz -o {output_vcf!s} {vcf_shards_dir!s}/part-*.bgz",
+                    f"ml htslib && tabix {output_vcf!s}"],
+        "file_dep": [vcf_shards_dir],
+        "targets": [output_vcf, output_tbi],
+        "clean": True
+    }
 
 
 @bsub(mem_gb=16, cpus=128)
-def task_null_model():
-    for phenotype in get_phenotypes_list():
-        yield {
-            "basename": "null_model",
-            "name": phenotype,
-            "actions": [
-                f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_null_model_exhaustive.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
-            "file_dep": [design_matrix_path, sample_matched_path.with_suffix(".PCRelate.RDS")],
-            "targets": [sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
-            "setup": ["initialize_r"],
-            "clean": True
-        }
-    yield {
-         # for dependencies and cleaning
-         "name": "all",
-         "actions": None,
-         "task_dep": [f"null_model:{phenotype}" for phenotype in get_phenotypes_list()],
-         "clean": [f"rm {sample_matched_path.with_suffix('.*.null.RDS')!s}"]
-     }
-    yield {
-         "name": "traits_of_interest",
-         "actions": None,
-         "task_dep": [f"null_model:{phenotype}" for phenotype in traits_of_interest]
-     }
-    yield {
-         "name": "blood_viral_load",
-         "actions": None,
-         "task_dep": ["null_model:blood_viral_load_*"]
-     }
+@each_phenotype_no_calcdep
+def task_null_model(name, phenotype):
+    return {
+        "name": name,
+        "actions": [
+            f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_null_model_exhaustive.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
+        "file_dep": [design_matrix_path, sample_matched_path.with_suffix(".PCRelate.RDS")],
+        "targets": [sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+        "setup": ["initialize_r"],
+        "clean": True
+    }
 
 
 def get_succeeded_phenotypes():
@@ -660,65 +701,37 @@ def get_succeeded_phenotypes():
             yield phenotype
 
 
-def gwas_to_run():
-    return {
-        'task_dep': [f"run_gwas:{phenotype}" for phenotype in get_succeeded_phenotypes()]
-    }
-
-
-def task_gwas_to_run():
-    return {
-        "actions": [gwas_to_run],
-        "task_dep": ["null_model:all"]
-    }
-
-
 @bsub(mem_gb=16, cpus=128)
-def task_vcf2seqgds_shards():
-    for name, mtfile in vcf_endpoints.items():
-        vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
-        gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
-        yield {
-            "name": name,
-            "actions": [
-                f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_vcf2gds.R'!s} {vcf_shards_dir!s}"],
-            "file_dep": [vcf_shards_dir],
-            "targets": [gds_shards_dir],
-            "clean": [clean_dir_targets]
-        }
+@each_subset
+def task_vcf2seqgds_shards(name, mtfile):
+    vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
+    gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
+    return {
+        "name": name,
+        "actions": [
+            f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_vcf2gds.R'!s} {vcf_shards_dir!s}"],
+        "file_dep": [vcf_shards_dir],
+        "targets": [gds_shards_dir],
+        "clean": [clean_dir_targets]
+    }
 
 
 @bsub(cpus=128, mem_gb=16)
-def task_run_gwas():
-    for phenotype in get_phenotypes_list():
-        yield {
-            "name": phenotype,
-            "actions": [
-                f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_gwas.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
-            "targets": [Path(f"{phenotype}.GENESIS.assoc.txt").resolve()],
-            "file_dep": [gwas_filtered_path.with_suffix(".shards.seq.gds"),
-                         sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
-            "setup": ["initialize_r"],
-            "clean": True
-        }
-    yield {
-        "name": "all",
-        "actions": None,
-        "calc_dep": ["gwas_to_run"],
-        "clean": ["rm *.GENESIS.assoc.txt"]
+@each_phenotype
+def task_run_gwas(name, phenotype):
+    return {
+        "name": name,
+        "actions": [
+            f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_gwas.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
+        "targets": [Path(f"{phenotype}.GENESIS.assoc.txt").resolve()],
+        "file_dep": [gwas_filtered_path.with_suffix(".shards.seq.gds"),
+                     sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+        "setup": ["initialize_r"],
+        "clean": True
     }
-    yield {
-         "name": "traits_of_interest",
-         "actions": None,
-         "task_dep": [f"run_gwas:{phenotype}" for phenotype in traits_of_interest]
-     }
-    yield {
-         "name": "blood_viral_load",
-         "actions": None,
-         "task_dep": [f"run_gwas:{phenotype}" for phenotype in bvl_traits]
-     }
 
 
+#TODO: update this so that we are plotting just 1 phenotype and use @each_phenotype
 def task_gwas_plots():
     phenotypes_list = get_phenotypes_list()
     yield {
@@ -733,15 +746,13 @@ def task_gwas_plots():
         "name": "blood_viral_load",
         "actions": [(wrap_r_function("make_gwas_plots"), [bvl_traits])],
         "task_dep": ["run_gwas:blood_viral_load"],
-        "setup": ["initialize_r"],
-        "clean": ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
+        "setup": ["initialize_r"]
     }
     yield {
         "name": "traits_of_interest",
         "actions": [(wrap_r_function("make_gwas_plots"), [traits_of_interest])],
         "task_dep": ["run_gwas:traits_of_interest"],
-        "setup": ["initialize_r"],
-        "clean": ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
+        "setup": ["initialize_r"]
     }
 
 
@@ -766,161 +777,147 @@ def task_lof_filter():
 
 
 @bsub(cpus=64)
-def task_vcf2seqgds_single():
-    for name, mtfile in vcf_endpoints.items():
-        vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
-        output_gds = mtfile.with_suffix(".seq.gds")
-        yield {
-            "name":     name,
-            "actions":  [f"Rscript {scriptsdir / 'seqvcf2gds.R'} {vcf_shards_dir} {output_gds}"],
-            "file_dep": [vcf_shards_dir],
-            "targets":  [output_gds]
-            }
+@each_subset
+def task_vcf2seqgds_single(name, mtfile):
+    vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
+    output_gds = mtfile.with_suffix(".seq.gds")
+    return {
+        "name":     name,
+        "actions":  [f"Rscript {scriptsdir / 'seqvcf2gds.R'} {vcf_shards_dir} {output_gds}"],
+        "file_dep": [vcf_shards_dir],
+        "targets":  [output_gds]
+        }
 
 
 @bsub(cpus=128, mem_gb=16)
-def task_run_smmat():
-    for filter in "lof", "rare":
-        for phenotype in get_phenotypes_list():
-            if filter == "lof":
-                mtfile = lof_filtered_path
-            else:
-                mtfile = rare_filtered_path
-            yield {
-                "name": f"{phenotype}_{filter}",
-                "actions": [f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
-                                                        f"{sample_matched_path.with_suffix('')}.{phenotype}.null.RDS "
-                                                        f"{phenotype}.{filter}"],
-                "targets": [f"{phenotype}.{filter}.GENESIS.SMMAT.assoc.txt",
-                            f"{phenotype}.{filter}.GENESIS.SMMAT.manhattan.png",
-                            f"{phenotype}.{filter}.GENESIS.SMMAT.qq.png"],
-                "file_dep": [mtfile.with_suffix(".seq.gds"),
-                             sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
-                "clean": True
-            }
-        yield {
-             "name": f"traits_of_interest_{filter}",
-             "actions": None,
-             "task_dep": [f"run_smmat:{phenotype}_{filter}" for phenotype in traits_of_interest]
-         }
+@PhenotypeDecorator({f'{phenotype}_{subset}': {'phenotype': phenotype,
+                                               'subset': subset,
+                                               'mtfile': vcf_endpoints[subset]}
+                     for phenotype, subset in itertools.product(get_phenotypes_list(), ['lof', 'rare'])},
+                    {'blood_viral_load': bvl_traits,
+                     'traits_of_interest': traits_of_interest})
+def task_run_smmat(name, phenotype, subset, mtfile):
+    return {
+        "name": name,
+        "actions": [f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
+                                                f"{sample_matched_path.with_suffix('')}.{phenotype}.null.RDS "
+                                                f"{phenotype}.{subset}"],
+        "targets": [f"{phenotype}.{subset}.GENESIS.SMMAT.assoc.txt",
+                    f"{phenotype}.{subset}.GENESIS.SMMAT.manhattan.png",
+                    f"{phenotype}.{subset}.GENESIS.SMMAT.qq.png"],
+        "file_dep": [mtfile.with_suffix(".seq.gds"),
+                     sample_matched_path.with_suffix(f".{phenotype}.null.RDS")],
+        "clean": True
+    }
 
 
 @bsub_hail(cpus=128)
-def task_split_chromosomes():
-    for name, mtfile in vcf_endpoints.items():
-        yield {
-            "name": name,
-            "actions":  [f"{scriptsdir / 'hail_wgs.py'} split-chromosomes {mtfile}"],
-            "file_dep": [mtfile],
-            "targets":  [mtfile.with_suffix(f".chr{chr}.mt") for chr in list(range(1,23)) + ['X']],
-            "clean":    [clean_dir_targets]
+@each_subset
+def task_split_chromosomes(name, mtfile):
+    return {
+        "name": name,
+        "actions":  [f"{scriptsdir / 'hail_wgs.py'} split-chromosomes {mtfile}"],
+        "file_dep": [mtfile],
+        "targets":  [mtfile.with_suffix(f".chr{chr}.mt") for chr in list(range(1,23)) + ['X']],
+        "clean":    [clean_dir_targets]
+    }
+
+
+@bsub
+@SubsetDecorator({f'chr{chrom}': {'chrom': chrom} for chrom in itertools.chain(range(1,23), ['X'])},
+                 {'all': [f'chr{chrom}' for chrom in itertools.chain(range(1,23), ['X'])]})
+def task_ld_scores(name, chrom):
+    ldsc_path = gwas_filtered_path.with_suffix(".ld_chr")
+    ldsc_path.mkdir(exist_ok=True)
+    bfile_prefix = gwas_filtered_path.with_suffix(f".chr{chrom}")
+    return {
+        "name":    name,
+        "actions": ["ml ldsc && " \
+                    f"ldsc.py --bfile {bfile_prefix} " \
+                    f"--l2 --ld-wind-kb 1000 --out {ldsc_path!s}/{chrom}"],
+        "targets": [ldsc_path / f"{chrom}.l2.M",
+                    ldsc_path / f"{chrom}.l2.M_5_50",
+                    ldsc_path / f"{chrom}.l2.ldscore.gz"],
+        "file_dep": [gwas_filtered_path.with_suffix(f".chr{chrom}.bed"),
+                     gwas_filtered_path.with_suffix(f".chr{chrom}.bim"),
+                     gwas_filtered_path.with_suffix(f".chr{chrom}.fam")],
+        "clean": True
         }
 
 
 @bsub
-def task_ld_scores():
-    ldsc_path = gwas_filtered_path.with_suffix(".ld_chr")
-    ldsc_path.mkdir(exist_ok=True)
-    for chrom in list(range(1,23)) + ["X"]:
-        bfile_prefix = gwas_filtered_path.with_suffix(f".chr{chrom}")
-        yield {
-            "name":    f"chr{chrom}",
+@each_phenotype
+def task_munge_sumstats(name, phenotype):
+    assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
+    return {
+            "name": name,
+            "file_dep": [assoc_file],
+            "targets": [assoc_file.with_suffix(".sumstats.gz")],
             "actions": ["ml ldsc && " \
-                        f"ldsc.py --bfile {bfile_prefix} " \
-                        f"--l2 --ld-wind-kb 1000 --out {ldsc_path!s}/{chrom}"],
-            "targets": [ldsc_path / f"{chrom}.l2.M",
-                        ldsc_path / f"{chrom}.l2.M_5_50",
-                        ldsc_path / f"{chrom}.l2.ldscore.gz"],
-            "file_dep": [gwas_filtered_path.with_suffix(f".chr{chrom}.bed"),
-                         gwas_filtered_path.with_suffix(f".chr{chrom}.bim"),
-                         gwas_filtered_path.with_suffix(f".chr{chrom}.fam")],
+                        f"munge_sumstats.py --sumstats {assoc_file!s} " \
+                        f"--out {assoc_file.with_suffix('')!s} " \
+                        "--snp variant.id --N-col n.obs --frq freq " \
+                        "--a1 effect.allele --a2 other.allele " \
+                        "--p Score.pval --signed-sumstats Est,0"],
             "clean": True
             }
-    yield {
-            "name":     "all",
-            "actions":  None,
-            "task_dep": [f"ld_scores:chr{chrom}" for chrom in list(range(1,23)) + ["X"]]
-            }
-
-
-@bsub
-def task_munge_sumstats():
-    for phenotype in get_phenotypes_list():
-        assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
-        yield {
-                "name": phenotype,
-                "file_dep": [assoc_file],
-                "targets": [assoc_file.with_suffix(".sumstats.gz")],
-                "actions": ["ml ldsc && " \
-                            f"munge_sumstats.py --sumstats {assoc_file!s} " \
-                            f"--out {assoc_file.with_suffix('')!s} " \
-                            "--snp variant.id --N-col n.obs --frq freq " \
-                            "--a1 effect.allele --a2 other.allele " \
-                            "--p Score.pval --signed-sumstats Est,0"],
-                "clean": True
-                }
-    yield {
-         "name": "traits_of_interest",
-         "actions": None,
-         "task_dep": [f"munge_sumstats:{phenotype}" for phenotype in traits_of_interest]
-     }
 
 
 @bsub(mem_gb=16)
-def task_ld_score_regression():
+@SubsetDecorator({f"{trait1}.{trait2}": {'trait1': trait1,
+                                         'trait2': trait2}
+                  for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2)},
+                 {'traits_of_interest': [f'{trait1}.{trait2}' for trait1, trait2 in itertools.combinations(traits_of_interest, 2)],
+                  'blood_viral_load': [f'{trait1}.{trait2}' for trait1, trait2 in itertools.combinations(bvl_traits, 2)]})
+def task_ld_score_regression(name, trait1, trait2):
     ldscore_path = gwas_filtered_path.with_suffix(".ld_chr")
-    for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
-        sumstats1 = Path(f"{trait1}.GENESIS.assoc.sumstats.gz").resolve()
-        sumstats2 = Path(f"{trait2}.GENESIS.assoc.sumstats.gz").resolve()
-        yield {
-            "name": f"{trait1}.{trait2}",
-            "actions": ["ml ldsc && " \
-                        f"ldsc.py --rg {sumstats1!s},{sumstats2!s} "\
-                        f"--ref-ld-chr {ldscore_path!s}/ "\
-                        f"--w-ld-chr {ldscore_path!s}/ "\
-                        f"--out {trait1}.{trait2}.assoc.rg"],
-            "file_dep": [sumstats1, sumstats2, ldscore_path] + [ldscore_path / f"{chr}.l2.ldscore.gz" for chr in list(range(1,23)) + ["X"]],
-            "targets":  [f"{trait1}.{trait2}.assoc.rg.log"],
-            "clean": True
-            }
-    yield {
-            "name": "traits_of_interest",
-            "actions": None,
-            "task_dep": [f"ld_score_regression:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(traits_of_interest, 2)]
-            }
-
-@bsub(mem_gb=20)
-def task_metaxcan_harmonize():
-    gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
-    metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
-    for phenotype in get_phenotypes_list():
-        assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
-        harmonized_file = assoc_file.with_suffix(".metaxcan_harmonized.txt")
-        yield {
-            "name": phenotype,
-            "actions": [f"python {gwas_parsing_script} "
-                        "-separator ' ' "
-                        f"-gwas_file {assoc_file!s} "
-                        f"-snp_reference_metadata {metadata_file!s} METADATA "
-                        "-output_column_map variant.id variant_id "
-                        "-output_column_map other.allele non_effect_allele "
-                        "-output_column_map effect.allele effect_allele "
-                        "-output_column_map Est effect_size "
-                        "-output_column_map Est.SE standard_error "
-                        "-output_column_map Score.pval pvalue "
-                        "-output_column_map chr chromosome --chromosome_format "
-                        "-output_column_map pos position "
-                        "-output_column_map n.obs sample_size "
-                        "-output_column_map freq frequency "
-                        "-output_order variant_id panel_variant_id chromosome position effect_allele non_effect_allele frequency pvalue zscore effect_size standard_error sample_size "
-                        f"-output {harmonized_file}"
-                        ],
-            "targets": [harmonized_file],
-            "file_dep": [assoc_file],
-            "clean": True
+    sumstats1 = Path(f"{trait1}.GENESIS.assoc.sumstats.gz").resolve()
+    sumstats2 = Path(f"{trait2}.GENESIS.assoc.sumstats.gz").resolve()
+    return {
+        "name": name,
+        "actions": ["ml ldsc && " \
+                    f"ldsc.py --rg {sumstats1!s},{sumstats2!s} "\
+                    f"--ref-ld-chr {ldscore_path!s}/ "\
+                    f"--w-ld-chr {ldscore_path!s}/ "\
+                    f"--out {trait1}.{trait2}.assoc.rg"],
+        "file_dep": [sumstats1, sumstats2, ldscore_path] + [ldscore_path / f"{chr}.l2.ldscore.gz" for chr in list(range(1,23)) + ["X"]],
+        "targets":  [f"{trait1}.{trait2}.assoc.rg.log"],
+        "clean": True
         }
 
+@bsub(mem_gb=20)
+@each_phenotype
+def task_metaxcan_harmonize(name, phenotype):
+    gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
+    metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
+    assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
+    harmonized_file = assoc_file.with_suffix(".metaxcan_harmonized.txt")
+    return {
+        "name": name,
+        "actions": [f"python {gwas_parsing_script} "
+                    "-separator ' ' "
+                    f"-gwas_file {assoc_file!s} "
+                    f"-snp_reference_metadata {metadata_file!s} METADATA "
+                    "-output_column_map variant.id variant_id "
+                    "-output_column_map other.allele non_effect_allele "
+                    "-output_column_map effect.allele effect_allele "
+                    "-output_column_map Est effect_size "
+                    "-output_column_map Est.SE standard_error "
+                    "-output_column_map Score.pval pvalue "
+                    "-output_column_map chr chromosome --chromosome_format "
+                    "-output_column_map pos position "
+                    "-output_column_map n.obs sample_size "
+                    "-output_column_map freq frequency "
+                    "-output_order variant_id panel_variant_id chromosome position effect_allele non_effect_allele frequency pvalue zscore effect_size standard_error sample_size "
+                    f"-output {harmonized_file}"
+                    ],
+        "targets": [harmonized_file],
+        "file_dep": [assoc_file],
+        "clean": True
+    }
 
+
+#TODO: convert this to a version of the each_phenotype decorator
 @bsub
 def task_s_predixcan():
     s_predixcan_script = scriptsdir / "MetaXcan" / "software" / "SPrediXcan.py"
@@ -965,48 +962,44 @@ def task_s_predixcan():
     }
 
 @bsub(mem_gb=8)
-def task_s_multixcan():
+@each_phenotype
+def task_s_multixcan(name, phenotype):
     s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMulTiXcan.py"
     metaxcan_data_dir = Path("../../resources/metaxcan_data").resolve()
     gtex_models_path = metaxcan_data_dir / "models" / "eqtl" / "mashr"
     snp_covariance_file = metaxcan_data_dir / "models" / "gtex_v8_expression_mashr_snp_smultixcan_covariance.txt.gz"
     predixcan_output_dir = Path("./spredixcan_results").resolve()
     model_names = [model.with_suffix("").name for model in gtex_models_path.glob("*.db")]
-    for phenotype in get_phenotypes_list():
-        assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
-        output_file = predixcan_output_dir / f"{phenotype}.smultixcan.txt"
-        yield {
-            "name": phenotype,
-            "actions": [f"python {s_multixcan_script!s} "
-                        f"--models_folder {gtex_models_path!s} "
-                        '--models_name_pattern "mashr_(.*).db" '
-                        f"--snp_covariance {snp_covariance_file!s} "
-                        f"--metaxcan_folder {predixcan_output_dir!s} "
-                        f'--metaxcan_filter "{phenotype}.mashr_(.*).csv" '
-                        '--metaxcan_file_name_parse_pattern "(.*).mashr_(.*).csv" '
-                        f"--gwas_file {assoc_file!s} "
-                        "--snp_column panel_variant_id "
-                        "--chromosome_column chromosome "
-                        "--position_column position "
-                        "--effect_allele_column effect_allele "
-                        "--non_effect_allele_column non_effect_allele "
-                        "--beta_column effect_size "
-                        "--se_column standard_error "
-                        "--pvalue_column pvalue "
-                        "--model_db_snp_key varID "
-                        "--keep_non_rsid "
-                        "--cutoff_condition_number 30 "
-                        "--throw "
-                        f"--output {output_file!s}"],
-            "file_dep": [assoc_file] + [predixcan_output_dir / f"{phenotype}.{model_name}.csv" for model_name in model_names],
-            "targets": [output_file],
-            "clean": True
-        }
-    yield {
-        "name": "traits_of_interest",
-        "actions": None,
-        "task_dep": [f"s_multixcan:{phenotype}" for phenotype in traits_of_interest]
+    assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
+    output_file = predixcan_output_dir / f"{phenotype}.smultixcan.txt"
+    return {
+        "name": name,
+        "actions": [f"python {s_multixcan_script!s} "
+                    f"--models_folder {gtex_models_path!s} "
+                    '--models_name_pattern "mashr_(.*).db" '
+                    f"--snp_covariance {snp_covariance_file!s} "
+                    f"--metaxcan_folder {predixcan_output_dir!s} "
+                    f'--metaxcan_filter "{phenotype}.mashr_(.*).csv" '
+                    '--metaxcan_file_name_parse_pattern "(.*).mashr_(.*).csv" '
+                    f"--gwas_file {assoc_file!s} "
+                    "--snp_column panel_variant_id "
+                    "--chromosome_column chromosome "
+                    "--position_column position "
+                    "--effect_allele_column effect_allele "
+                    "--non_effect_allele_column non_effect_allele "
+                    "--beta_column effect_size "
+                    "--se_column standard_error "
+                    "--pvalue_column pvalue "
+                    "--model_db_snp_key varID "
+                    "--keep_non_rsid "
+                    "--cutoff_condition_number 30 "
+                    "--throw "
+                    f"--output {output_file!s}"],
+        "file_dep": [assoc_file] + [predixcan_output_dir / f"{phenotype}.{model_name}.csv" for model_name in model_names],
+        "targets": [output_file],
+        "clean": True
     }
+
 
 if __name__ == "__main__":
     import doit
