@@ -9,10 +9,10 @@ import subprocess
 import sys
 import sysconfig
 import warnings
-from collections import namedtuple
+from collections import namedtuple, ChainMap
 from functools import wraps, update_wrapper
 from pathlib import Path
-from typing import ClassVar, NamedTuple, List, Sequence, Optional, Protocol, Iterable, Any, Dict
+from typing import ClassVar, NamedTuple, List, Sequence, Optional, Iterable, Any, Dict
 
 import attr
 import hail as hl
@@ -134,17 +134,17 @@ def extract_basename(task_dict, f):
         raise ValueError("Can't figure out basename")
 
 
-@attr.s
+@attr.s(auto_attribs=True)
 class SubsetDecorator:
     subsets: Dict[str, Dict[str, Any]] = attr.ib()
     meta: Dict[str, Sequence[str]]
 
     @subsets.validator
     def check_subsets_keys(self, attribute: attr.Attribute, value: Dict[str, Dict[str, Any]]):
-        if not more_itertools.all_equal(len(argnames) for argnames in value.keys()):
+        if not more_itertools.all_equal(len(argspec) for argspec in value.values()):
             raise ValueError(f"All values in {attribute.name} must have the same set of keys")
-        for argnames in value.keys():
-            self.argnames = argnames
+        for argspec in value.values():
+            self.argnames = argspec.keys()
             break
 
     def get_new_signature(self, f):
@@ -178,17 +178,17 @@ class SubsetDecorator:
         return wrapt.decorator(self.wrapper, adapter=signature)(f)
 
 
-each_subset = SubsetDecorator({label: {'mtfile': vcf_endpoints[label]} for label in vcf_endpoints} |
+each_subset = SubsetDecorator(ChainMap({label: {'mtfile': vcf_endpoints[label]} for label in vcf_endpoints},
                               {f"{label}_chr{chrom}": {'mtfile': vcf_endpoints[label].with_suffix(f".chr{chrom}.mt")}
-                                    for label, chrom in itertools.product(vcf_endpoints.keys(), itertools.chain(range(1,23), ['X']))},
-                              {f"{label}_race_split": [f"{label}_{race}" for race in ('white', 'black', 'asian', 'hispanic')]
-                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')} |
+                                    for label, chrom in itertools.product(vcf_endpoints.keys(), itertools.chain(range(1,23), ['X']))}),
+                              ChainMap({f"{label}_race_split": [f"{label}_{race}" for race in ('white', 'black', 'asian', 'hispanic')]
+                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')},
                               {f"{label}_chrom_split": [f"{label}_chr{chrom}" for chrom in itertools.chain(range(1,23), ['X'])]
-                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')})
+                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')}))
 
 
 def each_race(**kwargs):
-    return SubsetDecorator({race: {key: vcf_endpoints[f"{race}_{subset}"] for key, subset in kwargs} for race in ('white', 'black', 'hispanic', 'asian')},
+    return SubsetDecorator({race: {key: vcf_endpoints[f"{race}_{subset}"] for key, subset in kwargs.items()} for race in ('white', 'black', 'hispanic', 'asian')},
                            {"race_split": ('white', 'black', 'hispanic', 'asian')})
 
 
@@ -200,7 +200,7 @@ class PhenotypeDecorator(SubsetDecorator):
         }
 
     def wrapper(self, wrapped, instance, args, kwargs):
-        yield from self.wrapper(wrapped, instance, args, kwargs)
+        yield from super().wrapper(wrapped, instance, args, kwargs)
         basename = self.get_basename(wrapped)
         yield {
             'name': 'phenotypes_to_run',
@@ -310,7 +310,7 @@ class bsub:
         else:
             func_basename = None  # hopefully doit will deal appropriately with None where a basename is needed
         for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
-            if task_dict["actions"] is None:
+            if task_dict["actions"] is None or task_dict.get("name") == "phenotypes_to_run":
                 yield task_dict
                 continue
             basename = task_dict.get("basename", func_basename)
@@ -612,7 +612,7 @@ def task_race_prediction():
 @bsub_hail(cpus=128)
 @SubsetDecorator({f"{race}_{subset}": {'race': race.upper(),
                                        'mtfile': vcf_endpoints[subset]}
-                  for race, subset in itertools.product(['full', 'ld'],
+                  for subset, race in itertools.product(['full', 'ld'],
                                                         ['white', 'black', 'hispanic', 'asian'])},
                  {subset: [f"{race}_{subset}" for race in ('white', 'black', 'hispanic', 'asian')]
                   for subset in ('full', 'ld')})
