@@ -10,7 +10,7 @@ import sys
 import sysconfig
 import warnings
 from pathlib import Path
-from typing import ClassVar, List, Sequence, Optional, Dict, Tuple
+from typing import ClassVar, List, Sequence, Optional, Dict
 
 import attr
 import hail as hl
@@ -107,8 +107,7 @@ class TaskDecorator:
         return []
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
-        for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
-            yield task_dict
+        yield from self.iter_transformed_tasks(wrapped, *args, **kwargs)
 
     def get_new_signature(self,  wrapped):
         original_signature = inspect.signature(wrapped)
@@ -129,12 +128,10 @@ class TaskDecorator:
 
     def iter_transformed_tasks(self, wrapped, label=None, *args, **kwargs):
         for task_dict in more_itertools.always_iterable(wrapped(*args, **kwargs), dict):
-            basename = self.extract_basename(wrapped, task_dict)
-            name = task_dict.get("name")
-            task_dict["basename"] = basename
+            task_dict["basename"] = self.extract_basename(wrapped, task_dict)
             if label is not None:
-                task_dict["name"] = f"{name}_{label}" if name is not None else label
-            yield basename, name, task_dict
+                task_dict["name"] = f"{task_dict['name']}_{label}" if "name" in task_dict else label
+            yield task_dict
 
     def __call__(self, wrapped):
         return wrapt.decorator(self.generate_tasks, adapter=wrapt.adapter_factory(self.get_new_signature))(wrapped)
@@ -154,7 +151,6 @@ class each_subset(TaskDecorator):
         races: List[Optional[str]] = ['white', 'black', 'hispanic', 'asian']
         chroms: List[Optional] = [str(chrom) for chrom in range(1,23)] + ["X"]
         func_signature = inspect.signature(wrapped)
-        task_expansions: Dict[Tuple[str, str], List[str]] = {}
         for subset in self.subsets:
             for race in races + [None]:
                 if race is not None and not self.use_races:
@@ -179,41 +175,33 @@ class each_subset(TaskDecorator):
                     for arg, value in [('subset', subset), ('race', race), ('chrom', chrom), ('mtfile', path)]:
                         if arg in func_signature.parameters:
                             task_args[arg] = value
-                    for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, label, *args, **task_args, **kwargs):
-                        new_name = task_dict["name"]
+                    for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **task_args, **kwargs):
+                        basename = task_dict["basename"]
+                        name = task_dict["name"]
                         if (chrom is not None or self.include_all_chroms) and (race is not None or self.include_all_races):
                             yield task_dict
-                            if original_name is not None:
-                                task_expansions.setdefault((basename, original_name), []).append(new_name)
 
                         if chrom is None and self.use_chroms:
                             yield {
                                 "basename": basename,
-                                "name": f"{new_name}_chrom_split",
+                                "name": f"{name}_chrom_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{new_name}_{chrom}" for chrom in chroms]
+                                "task_dep": [f"{basename}:{name}_{chrom}" for chrom in chroms]
                             }
                         if race is None and self.use_races:
                             yield {
                                 "basename": basename,
-                                "name": f"{new_name}_race_split",
+                                "name": f"{name}_race_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{new_name}_{race}" for race in races]
+                                "task_dep": [f"{basename}:{name}_{race}" for race in races]
                             }
                         if race is None and chrom is None and self.use_races and self.use_chroms:
                             yield {
                                 "basename": basename,
-                                "name": f"{new_name}_race_and_chrom_split",
+                                "name": f"{name}_race_and_chrom_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{new_name}_{race}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
+                                "task_dep": [f"{basename}:{name}_{race}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
                             }
-        for basename, original_name in task_expansions:
-            yield {
-                "basename": basename,
-                "name": original_name,
-                "actions": None,
-                "task_dep": [f"{basename}:{new_name}" for new_name in task_expansions[basename, original_name]]
-            }
 
 
 class each_race(TaskDecorator):
@@ -226,7 +214,6 @@ class each_race(TaskDecorator):
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
         races: List[Optional[str]] = ['white', 'black', 'hispanic', 'asian']
-        task_expansions: Dict[Tuple[str, str], List[str]] = {}
         for race in races + [None]:
             if race is None:
                 label = "all"
@@ -234,27 +221,19 @@ class each_race(TaskDecorator):
             else:
                 label = race
                 resolved_path_args = {key: all_subset_paths[f"{race}_{subset}"] for key, subset in self.path_args.items()}
-            for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, label, *args, **resolved_path_args, **kwargs):
-                new_name = task_dict["name"]
+            for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **resolved_path_args, **kwargs):
+                basename = task_dict["basename"]
+                name = task_dict["name"]
                 yield task_dict
-                if original_name is not None:
-                    task_expansions.setdefault((basename, original_name), []).append(new_name)
 
                 if race is None:
-                    new_name = new_name[:-3]  # removes "all"
+                    name = name[:-3]  # removes "all"
                     yield  {
                         "basename": basename,
-                        "name": f"{new_name}race_split",
+                        "name": f"{name}race_split",
                         "actions": None,
-                        "task_dep": [f"{new_name}{race}" for race in races]
+                        "task_dep": [f"{name}{race}" for race in races]
                     }
-        for basename, original_name in task_expansions:
-            yield {
-                "basename": basename,
-                "name": original_name,
-                "actions": None,
-                "task_dep": [f"{basename}:{new_name}" for new_name in task_expansions[basename, original_name]]
-            }
 
 
 def get_phenotypes_list():
@@ -283,13 +262,14 @@ class each_phenotype(TaskDecorator):
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
         for phenotype in get_phenotypes_list():
-            for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, phenotype, phenotype=phenotype, *args, **kwargs):
-                yield task_dict
+            yield from self.iter_transformed_tasks(wrapped, phenotype, phenotype=phenotype, *args, **kwargs)
         generated_phenotypes_to_run = {}
-        for basename, name, task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
+        for task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
+            basename = task_dict["basename"]
+            name = task_dict.get("name")
             all_traits_task = {
                 "basename": basename,
-                'name': name if name is not None else 'all',
+                'name': f"{name}_all" if name is not None else 'all',
                 'actions': None
             }
             if self.use_succeeded_for_all:
@@ -303,8 +283,7 @@ class each_phenotype(TaskDecorator):
                     generated_phenotypes_to_run[basename] = True
                 all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
-                task_prefix = f"{basename}:" if name is None else f"{basename}:{name}"
-                all_traits_task['task_dep'] = [f"{task_prefix}{phenotype}" for phenotype in get_phenotypes_list()]
+                all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
             yield all_traits_task
             for list_name, phenotypes_list in self.phenotype_lists.items():
                 yield {
@@ -313,8 +292,6 @@ class each_phenotype(TaskDecorator):
                     "actions": None,
                     "task_dep": [f"{basename}:{phenotype}" for phenotype in phenotypes_list]
                 }
-
-
 
 
 class phenotype_pairs(each_phenotype):
@@ -328,13 +305,14 @@ class phenotype_pairs(each_phenotype):
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
         for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
-            for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, f"{trait1}.{trait2}", trait1=trait1, trait2=trait2, *args, **kwargs):
-                yield task_dict
+            yield from self.iter_transformed_tasks(wrapped, f"{trait1}.{trait2}", trait1=trait1, trait2=trait2, *args, **kwargs)
         generated_phenotypes_to_run = {}
-        for basename, name, task_dict in self.iter_transformed_tasks(wrapped, None, trait1="dummy", trait2="dummy", *args, **kwargs):  # to get task names
+        for task_dict in self.iter_transformed_tasks(wrapped, None, trait1="dummy", trait2="dummy", *args, **kwargs):  # to get task names
+            basename = task_dict["basename"]
+            name = task_dict.get("name")
             all_traits_task = {
                 "basename": basename,
-                'name': name if name is not None else 'all',
+                'name': f"{name}_all" if name is not None else 'all',
                 'actions': None
             }
             if self.use_succeeded_for_all:
@@ -348,8 +326,7 @@ class phenotype_pairs(each_phenotype):
                     generated_phenotypes_to_run[basename] = True
                 all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
-                task_prefix = f"{basename}:" if name is None else f"{basename}:{name}"
-                all_traits_task['task_dep'] = [f"{task_prefix}{trait1}.{trait2}" for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2)]
+                all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
             yield all_traits_task
             for list_name, phenotypes_list in self.phenotype_lists.items():
                 yield {
@@ -424,10 +401,11 @@ class bsub(TaskDecorator):
                                            "{'< ' if script else ''} "
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
-        for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
+        for task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
             if task_dict["actions"] is None or task_dict.get("name", "").startswith("_"):
                 yield task_dict
                 continue
+            basename = task_dict["basename"]
             task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
             job_name = task_name.replace(":", "_")
             bsub_action = BsubAction(job_name, self, task_dict["actions"][0])
@@ -957,47 +935,48 @@ def task_metaxcan_harmonize(phenotype):
     }
 
 
+#TODO: convert this to a version of the each_phenotype decorator
 @bsub
-@each_phenotype
-def task_s_predixcan(phenotype):
+def task_s_predixcan():
     s_predixcan_script = scriptsdir / "MetaXcan" / "software" / "SPrediXcan.py"
     gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
     output_dir = Path("./spredixcan_results").resolve()
     output_dir.mkdir(exist_ok=True)
-    assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
     model_names = []
     for model in gtex_models_path.glob("*.db"):
         model_name = model.with_suffix("").name
         model_names.append(model_name)
-        output_file = output_dir / f"{phenotype}.{model_name}.csv"
-        yield {
-            "name": f"{model_name}",
-            "actions": [f"python {s_predixcan_script} "
-                        f"--gwas_file {assoc_file} "
-                        "--snp_column panel_variant_id "
-                        "--chromosome_column chromosome "
-                        "--position_column position "
-                        "--effect_allele_column effect_allele "
-                        "--non_effect_allele_column non_effect_allele "
-                        "--beta_column effect_size "
-                        "--se_column standard_error "
-                        "--pvalue_column pvalue "
-                        "--model_db_snp_key varID "
-                        "--keep_non_rsid "
-                        "--additional_output "
-                        "--overwrite "
-                        "--throw "
-                        f"--model_db_path {model} "
-                        f"--covariance {model.with_suffix('.txt.gz')} "
-                        f"--output_file {output_file}"],
-            "file_dep": [assoc_file],
-            "targets": [output_file],
-            "clean": True
-        }
+        for phenotype in get_phenotypes_list():
+            assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
+            output_file = output_dir / f"{phenotype}.{model_name}.csv"
+            yield {
+                "name": f"{phenotype}_{model_name}",
+                "actions": [f"python {s_predixcan_script!s} "
+                            f"--gwas_file {assoc_file!s} "
+                            "--snp_column panel_variant_id "
+                            "--chromosome_column chromosome "
+                            "--position_column position "
+                            "--effect_allele_column effect_allele "
+                            "--non_effect_allele_column non_effect_allele "
+                            "--beta_column effect_size "
+                            "--se_column standard_error "
+                            "--pvalue_column pvalue "
+                            "--model_db_snp_key varID "
+                            "--keep_non_rsid "
+                            "--additional_output "
+                            "--overwrite "
+                            "--throw "
+                            f"--model_db_path {model!s} "
+                            f"--covariance {model.with_suffix('.txt.gz')!s} "
+                            f"--output_file {output_file!s}"],
+                "file_dep": [assoc_file],
+                "targets": [output_file],
+                "clean": True
+            }
     yield {
-        "name": "mashr_all",
+        "name": "traits_of_interest",
         "actions": None,
-        "task_dep": model_names
+        "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
     }
 
 @bsub(mem_gb=8)
