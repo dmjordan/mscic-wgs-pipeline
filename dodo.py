@@ -286,11 +286,10 @@ class each_phenotype(TaskDecorator):
             for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, phenotype, phenotype=phenotype, *args, **kwargs):
                 yield task_dict
         generated_phenotypes_to_run = {}
-        for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
-            new_name = task_dict.get("name")
+        for basename, name, task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
             all_traits_task = {
                 "basename": basename,
-                'name': new_name if new_name is not None else 'all',
+                'name': name if name is not None else 'all',
                 'actions': None
             }
             if self.use_succeeded_for_all:
@@ -304,15 +303,13 @@ class each_phenotype(TaskDecorator):
                     generated_phenotypes_to_run[basename] = True
                 all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
-                if new_name is None:
-                    all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
-                else:
-                    all_traits_task['task_dep'] = [f"{basename}:{new_name}_{phenotype}" for phenotype in get_phenotypes_list()]
+                task_prefix = f"{basename}:" if name is None else f"{basename}:{name}"
+                all_traits_task['task_dep'] = [f"{task_prefix}{phenotype}" for phenotype in get_phenotypes_list()]
             yield all_traits_task
             for list_name, phenotypes_list in self.phenotype_lists.items():
                 yield {
                     'basename': basename,
-                    'name': f"{new_name}_{list_name}" if new_name is not None else list_name,
+                    'name': f"{name}_{list_name}" if name is not None else list_name,
                     "actions": None,
                     "task_dep": [f"{basename}:{phenotype}" for phenotype in phenotypes_list]
                 }
@@ -334,12 +331,10 @@ class phenotype_pairs(each_phenotype):
             for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, f"{trait1}.{trait2}", trait1=trait1, trait2=trait2, *args, **kwargs):
                 yield task_dict
         generated_phenotypes_to_run = {}
-        for task_dict in self.iter_transformed_tasks(wrapped, None, trait1="dummy", trait2="dummy", *args, **kwargs):  # to get task names
-            basename = task_dict["basename"]
-            name = task_dict.get("name")
+        for basename, name, task_dict in self.iter_transformed_tasks(wrapped, None, trait1="dummy", trait2="dummy", *args, **kwargs):  # to get task names
             all_traits_task = {
                 "basename": basename,
-                'name': f"{name}_all" if name is not None else 'all',
+                'name': name if name is not None else 'all',
                 'actions': None
             }
             if self.use_succeeded_for_all:
@@ -353,7 +348,8 @@ class phenotype_pairs(each_phenotype):
                     generated_phenotypes_to_run[basename] = True
                 all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
-                all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
+                task_prefix = f"{basename}:" if name is None else f"{basename}:{name}"
+                all_traits_task['task_dep'] = [f"{task_prefix}{trait1}.{trait2}" for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2)]
             yield all_traits_task
             for list_name, phenotypes_list in self.phenotype_lists.items():
                 yield {
