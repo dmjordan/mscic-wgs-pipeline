@@ -10,7 +10,7 @@ import sys
 import sysconfig
 import warnings
 from pathlib import Path
-from typing import ClassVar, List, Sequence, Optional, Dict
+from typing import ClassVar, List, Sequence, Optional, Dict, Tuple
 
 import attr
 import hail as hl
@@ -128,10 +128,12 @@ class TaskDecorator:
 
     def iter_transformed_tasks(self, wrapped, label=None, *args, **kwargs):
         for task_dict in more_itertools.always_iterable(wrapped(*args, **kwargs), dict):
-            task_dict["basename"] = self.extract_basename(wrapped, task_dict)
+            basename = self.extract_basename(wrapped, task_dict)
+            name = task_dict.get("name")
+            task_dict["basename"] = basename
             if label is not None:
-                task_dict["name"] = f"{task_dict['name']}_{label}" if "name" in task_dict else label
-            yield task_dict
+                task_dict["name"] = f"{name}_{label}" if name is not None else label
+            yield basename, name, task_dict
 
     def __call__(self, wrapped):
         return wrapt.decorator(self.generate_tasks, adapter=wrapt.adapter_factory(self.get_new_signature))(wrapped)
@@ -151,6 +153,7 @@ class each_subset(TaskDecorator):
         races: List[Optional[str]] = ['white', 'black', 'hispanic', 'asian']
         chroms: List[Optional] = [str(chrom) for chrom in range(1,23)] + ["X"]
         func_signature = inspect.signature(wrapped)
+        task_expansions: Dict[Tuple[str, str], List[str]] = {}
         for subset in self.subsets:
             for race in races + [None]:
                 if race is not None and not self.use_races:
@@ -175,33 +178,41 @@ class each_subset(TaskDecorator):
                     for arg, value in [('subset', subset), ('race', race), ('chrom', chrom), ('mtfile', path)]:
                         if arg in func_signature.parameters:
                             task_args[arg] = value
-                    for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **task_args, **kwargs):
-                        basename = task_dict["basename"]
-                        name = task_dict["name"]
+                    for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, label, *args, **task_args, **kwargs):
+                        new_name = task_dict["name"]
                         if (chrom is not None or self.include_all_chroms) and (race is not None or self.include_all_races):
                             yield task_dict
+                            if original_name is not None:
+                                task_expansions.setdefault((basename, original_name), new_name)
 
                         if chrom is None and self.use_chroms:
                             yield {
                                 "basename": basename,
-                                "name": f"{name}_chrom_split",
+                                "name": f"{new_name}_chrom_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{name}_{chrom}" for chrom in chroms]
+                                "task_dep": [f"{basename}:{new_name}_{chrom}" for chrom in chroms]
                             }
                         if race is None and self.use_races:
                             yield {
                                 "basename": basename,
-                                "name": f"{name}_race_split",
+                                "name": f"{new_name}_race_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{name}_{race}" for race in races]
+                                "task_dep": [f"{basename}:{new_name}_{race}" for race in races]
                             }
                         if race is None and chrom is None and self.use_races and self.use_chroms:
                             yield {
                                 "basename": basename,
-                                "name": f"{name}_race_and_chrom_split",
+                                "name": f"{new_name}_race_and_chrom_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{name}_{race}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
+                                "task_dep": [f"{basename}:{new_name}_{race}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
                             }
+        for basename, original_name in task_expansions:
+            yield {
+                "basename": basename,
+                "name": original_name,
+                "actions": None,
+                "task_dep": [f"{basename}:{new_name}" for new_name in task_expansions[basename, original_name]]
+            }
 
 
 class each_race(TaskDecorator):
@@ -935,48 +946,47 @@ def task_metaxcan_harmonize(phenotype):
     }
 
 
-#TODO: convert this to a version of the each_phenotype decorator
 @bsub
-def task_s_predixcan():
+@each_phenotype
+def task_s_predixcan(phenotype):
     s_predixcan_script = scriptsdir / "MetaXcan" / "software" / "SPrediXcan.py"
     gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
     output_dir = Path("./spredixcan_results").resolve()
     output_dir.mkdir(exist_ok=True)
+    assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
     model_names = []
     for model in gtex_models_path.glob("*.db"):
         model_name = model.with_suffix("").name
         model_names.append(model_name)
-        for phenotype in get_phenotypes_list():
-            assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
-            output_file = output_dir / f"{phenotype}.{model_name}.csv"
-            yield {
-                "name": f"{phenotype}_{model_name}",
-                "actions": [f"python {s_predixcan_script!s} "
-                            f"--gwas_file {assoc_file!s} "
-                            "--snp_column panel_variant_id "
-                            "--chromosome_column chromosome "
-                            "--position_column position "
-                            "--effect_allele_column effect_allele "
-                            "--non_effect_allele_column non_effect_allele "
-                            "--beta_column effect_size "
-                            "--se_column standard_error "
-                            "--pvalue_column pvalue "
-                            "--model_db_snp_key varID "
-                            "--keep_non_rsid "
-                            "--additional_output "
-                            "--overwrite "
-                            "--throw "
-                            f"--model_db_path {model!s} "
-                            f"--covariance {model.with_suffix('.txt.gz')!s} "
-                            f"--output_file {output_file!s}"],
-                "file_dep": [assoc_file],
-                "targets": [output_file],
-                "clean": True
-            }
+        output_file = output_dir / f"{phenotype}.{model_name}.csv"
+        yield {
+            "name": f"{model_name}",
+            "actions": [f"python {s_predixcan_script} "
+                        f"--gwas_file {assoc_file} "
+                        "--snp_column panel_variant_id "
+                        "--chromosome_column chromosome "
+                        "--position_column position "
+                        "--effect_allele_column effect_allele "
+                        "--non_effect_allele_column non_effect_allele "
+                        "--beta_column effect_size "
+                        "--se_column standard_error "
+                        "--pvalue_column pvalue "
+                        "--model_db_snp_key varID "
+                        "--keep_non_rsid "
+                        "--additional_output "
+                        "--overwrite "
+                        "--throw "
+                        f"--model_db_path {model} "
+                        f"--covariance {model.with_suffix('.txt.gz')} "
+                        f"--output_file {output_file}"],
+            "file_dep": [assoc_file],
+            "targets": [output_file],
+            "clean": True
+        }
     yield {
-        "name": "traits_of_interest",
+        "name": "mashr_all",
         "actions": None,
-        "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
+        "task_dep": model_names
     }
 
 @bsub(mem_gb=8)
