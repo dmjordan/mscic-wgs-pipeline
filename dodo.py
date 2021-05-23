@@ -10,7 +10,7 @@ import sys
 import sysconfig
 import warnings
 from pathlib import Path
-from typing import ClassVar, List, Sequence, Optional, Dict, Tuple, Union
+from typing import ClassVar, List, Sequence, Optional, Dict, Tuple
 
 import attr
 import hail as hl
@@ -92,50 +92,6 @@ for race in ("white", "black", "hispanic", "asian"):
                             ("exome", "exome_filtered")]:
         all_subset_paths[f"{race}_{subset}"] = all_subset_paths[f"{race}_full"].with_suffix(f".{suffix}.mt")
 
-def get_phenotypes_list():
-    return build_design_matrix.all_phenotypes
-
-
-traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
-        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
-        "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
-bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
-
-
-@attr.s(auto_attribs=True)
-class TaskSpec:
-    subset: str = "full"
-    race: Optional[str] = None
-    chrom: Optional[str] = None
-    phenotype: Union[str, Tuple[str, ...], None] = None
-    tissue: Optional[str] = None
-
-    def mt_path(self):
-        base_path = all_subset_paths[f"{self.race}_{self.subset}" if self.race is not None else self.subset]
-        if self.chrom is not None:
-            return base_path.with_suffix(f".chr{self.chrom}.mt")
-        else:
-            return base_path
-
-    def kwargs_for_function(self, function):
-        signature = inspect.signature(function)
-        kwargs = {}
-        if "mtfile" in signature:
-            kwargs["mtfile"] = self.mt_path()
-        if "subset" in signature:
-            kwargs["subset"] = self.subset
-        if "race" in signature:
-            kwargs["race"] = self.race
-        if "chrom" in signature:
-            kwargs["chrom"] = self.chrom
-        if "phenotype" in signature:
-            kwargs["phenotype"] = self.phenotype
-        if "tissue" in signature:
-            kwargs["tissue"] = self.tissue
-        return kwargs
-
-
-
 class TaskDecorator:
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
@@ -182,110 +138,6 @@ class TaskDecorator:
 
     def __call__(self, wrapped):
         return wrapt.decorator(self.generate_tasks, adapter=wrapt.adapter_factory(self.get_new_signature))(wrapped)
-
-
-@attr.s(auto_attribs=True)
-class expand_tasks(TaskDecorator):
-    @staticmethod
-    def get_phenotypes_list():
-        return build_design_matrix.all_phenotypes
-
-    @staticmethod
-    def get_tissues_list():
-        gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
-        tissues = []
-        for model in gtex_models_path.glob("*.db"):
-            model_name = model.with_suffix("").name
-            tissues.append(model_name[6:])  # "mashr_"
-        return tuple(tissues)
-
-    ALL_SUBSETS: ClassVar[Tuple[str, ...]] = tuple(base_paths.keys())
-    ALL_RACES: ClassVar[Tuple[str, ...]] = ("white", "black", "hispanic", "asian")
-    ALL_CHROMS: ClassVar[Tuple[str, ...]] = tuple(str(i) for i in range(1,23)) + ("X",)
-    ALL_PHENOTYPES: ClassVar[Tuple[str, ...]] = get_phenotypes_list()
-    ALL_TISSUES: ClassVar[Tuple[str, ...]] = get_tissues_list()
-
-    subsets: Sequence[str] = ALL_SUBSETS
-    races: Sequence[Optional[str]] = ALL_RACES + (None,)
-    chroms: Sequence[Optional[str]] = ALL_CHROMS + (None,)
-    phenotypes: Optional[Sequence[Union[str, Tuple[str, ...]]]] = None
-    tissues: Optional[Sequence[str]] = None
-
-    @property
-    def consumed_args(self):
-        args = ["mtfile"]
-        if len(self.subsets) > 1:
-            args.append("subset")
-        if any(race is not None for race in self.races):
-            args.append("race")
-        if any(chrom is not None for chrom in self.chroms):
-            args.append("chrom")
-        if any(phenotype is not None for phenotype in self.phenotypes):
-            args.append("phenotype")
-        if any(tissue is not None for tissue in self.tissues):
-            args.append("tissue")
-        return args
-
-    def generate_tasks(self, wrapped, instance, args, kwargs):
-        func_signature = inspect.signature(wrapped)
-        collections = {}
-        if len(self.races) > 1:
-            collections['race'] = list(self.races) + ["EACH"]
-        else:
-            collections['race'] = self.races
-        if len(self.chroms) > 1:
-            collections['chrom'] = list(self.chroms) + ["EACH"]
-        else:
-            collections['chrom'] = self.chroms
-        if self.phenotypes is None:
-            collections['phenotype'] = [None]
-        elif len(self.phenotypes) > 1:
-            collections['phenotype'] = list(self.phenotypes) + ["EACH"]
-        else:
-            collections['phenotype'] = self.phenotypes
-        if self.tissues is None:
-            collections['tissue'] = [None]
-        elif len(self.tissues) > 1:
-            collections['tissue'] = list(self.tissues) + ["EACH"]
-        else:
-            collections['tissue'] = self.tissues
-
-        for race, subset, chrom, phenotype, tissue in itertools.product(*collections.items()):
-            params = {}
-            if race is not None:
-                params['race'] = race
-            if len(self.subsets) > 1:
-                params['subset'] = subset
-            if chrom is not None:
-                params['chrom'] = chrom
-            if phenotype is not None:
-                if not isinstance(phenotype, str) and len(phenotype) > 1:
-                    for i, phen in enumerate(phenotype):
-                        params[f'phenotype{i}'] = phen
-            if tissue is not None:
-                params['tissue'] = tissue
-            mtfile = all_subset_paths[f"{race}_{subset}" if race is not None else subset]
-            if chrom is not None:
-                params['mtfile'] = mtfile.with_suffix(f".chr{chrom}.mt")
-
-            label = "_".join(value if value != "EACH" else f"each_{key}" for key, value in params.items())
-            if any(value == "EACH" for value in params.values()):
-                exploded_params = []
-                for key, value in params.items():
-                    if value != "EACH":
-                        exploded_params.append([value])
-                    else:
-                        exploded_params.append(collections[key])
-                basename = self.extract_basename(wrapped, {})
-                yield {
-                    'basename': basename,
-                    'name': label,
-                    'actions': None,
-                    'task_dep': ["_".join(product) for product in itertools.product(*exploded_params)]
-                }
-            else:
-                for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, label, *args, **params, **kwargs):
-                    yield task_dict
 
 
 @attr.s(auto_attribs=True)
@@ -403,6 +255,17 @@ class each_race(TaskDecorator):
                 "actions": None,
                 "task_dep": [f"{basename}:{new_name}" for new_name in task_expansions[basename, original_name]]
             }
+
+
+def get_phenotypes_list():
+    return build_design_matrix.all_phenotypes
+
+
+traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
+        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
+        "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
+bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
+
 
 @attr.s(auto_attribs=True)
 class each_phenotype(TaskDecorator):
