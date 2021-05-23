@@ -134,7 +134,7 @@ class TaskDecorator:
             yield task_dict
 
     def __call__(self, wrapped):
-        return wrapt.decorator(self.generate_tasks(), adapter=wrapt.adapter_factory(self.get_new_signature))
+        return wrapt.decorator(self.generate_tasks, adapter=wrapt.adapter_factory(self.get_new_signature))(wrapped)
 
 
 @attr.s(auto_attribs=True)
@@ -221,7 +221,6 @@ class each_race(TaskDecorator):
             else:
                 label = race
                 resolved_path_args = {key: all_subset_paths[f"{race}_{subset}"] for key, subset in self.path_args.items()}
-            kwargs.update(resolved_path_args)
             for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **resolved_path_args, **kwargs):
                 basename = task_dict["basename"]
                 name = task_dict["name"]
@@ -282,7 +281,7 @@ class each_phenotype(TaskDecorator):
                         'task_dep': ['null_model:all']
                     }
                     generated_phenotypes_to_run[basename] = True
-                all_traits_task['calc_dep'] = f"{basename}:_phenotypes_to_run"
+                all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
                 all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
             yield all_traits_task
@@ -325,7 +324,7 @@ class phenotype_pairs(each_phenotype):
                         'task_dep': ['null_model:all']
                     }
                     generated_phenotypes_to_run[basename] = True
-                all_traits_task['calc_dep'] = f"{basename}:_phenotypes_to_run"
+                all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
                 all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
             yield all_traits_task
@@ -731,7 +730,6 @@ def task_build_vcf(mtfile):
 @each_phenotype(use_succeeded_for_all=False)
 def task_null_model(phenotype):
     return {
-        "name": name,
         "actions": [
             f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_null_model_exhaustive.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
         "file_dep": [design_matrix_path, sample_matched_path.with_suffix(".PCRelate.RDS")],
@@ -782,14 +780,14 @@ def task_run_gwas(phenotype):
 #TODO: update this so that we are plotting just 1 phenotype and use @each_phenotype
 def task_gwas_plots():
     phenotypes_list = get_phenotypes_list()
-    yield {
-        "name": "all",
-        "actions":  [(wrap_r_function("make_gwas_plots"), [phenotypes_list])],
-        "task_dep": ["run_gwas:all"],
-        "calc_dep": ["gwas_to_run"],
-        "setup":    ["initialize_r"],
-        "clean":    ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
-    }
+    #yield {
+    #    "name": "all",
+    #    "actions":  [(wrap_r_function("make_gwas_plots"), [phenotypes_list])],
+    #    "task_dep": ["run_gwas:all"],
+    #    "calc_dep": ["gwas_to_run"],
+    #    "setup":    ["initialize_r"],
+    #    "clean":    ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
+    #}
     yield {
         "name": "blood_viral_load",
         "actions": [(wrap_r_function("make_gwas_plots"), [bvl_traits])],
@@ -837,8 +835,8 @@ def task_vcf2seqgds_single(mtfile):
 
 
 @bsub(cpus=128, mem_gb=16)
-@each_phenotype
 @each_subset(subsets=["lof", "rare"], use_chroms=False, use_races=False)
+@each_phenotype
 def task_run_smmat(phenotype, subset, mtfile):
     return {
         "actions": [f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
@@ -903,7 +901,7 @@ def task_munge_sumstats(phenotype):
 
 @bsub(mem_gb=16)
 @phenotype_pairs
-def task_ld_score_regression(name, trait1, trait2):
+def task_ld_score_regression(trait1, trait2):
     ldscore_path = gwas_filtered_path.with_suffix(".ld_chr")
     sumstats1 = Path(f"{trait1}.GENESIS.assoc.sumstats.gz").resolve()
     sumstats2 = Path(f"{trait2}.GENESIS.assoc.sumstats.gz").resolve()
