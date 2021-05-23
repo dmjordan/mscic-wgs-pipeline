@@ -777,28 +777,16 @@ def task_run_gwas(phenotype):
     }
 
 
-#TODO: update this so that we are plotting just 1 phenotype and use @each_phenotype
-def task_gwas_plots():
-    phenotypes_list = get_phenotypes_list()
-    #yield {
-    #    "name": "all",
-    #    "actions":  [(wrap_r_function("make_gwas_plots"), [phenotypes_list])],
-    #    "task_dep": ["run_gwas:all"],
-    #    "calc_dep": ["gwas_to_run"],
-    #    "setup":    ["initialize_r"],
-    #    "clean":    ["rm *.GENESIS.qq.png *.GENESIS.manhattan.png"]
-    #}
-    yield {
-        "name": "blood_viral_load",
-        "actions": [(wrap_r_function("make_gwas_plots"), [bvl_traits])],
-        "task_dep": ["run_gwas:blood_viral_load"],
-        "setup": ["initialize_r"]
-    }
-    yield {
-        "name": "traits_of_interest",
-        "actions": [(wrap_r_function("make_gwas_plots"), [traits_of_interest])],
-        "task_dep": ["run_gwas:traits_of_interest"],
-        "setup": ["initialize_r"]
+@bsub
+@each_phenotype
+def task_gwas_plots(phenotype):
+    assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
+    return {
+        "actions": [f"Rscript {scriptsdir / 'make_gwas_plot.R'} {phenotype}"],
+        "file_dep": [assoc_file],
+        "targets": [assoc_file.with_suffix("").with_suffix(".qq.png"),
+                    assoc_file.with_suffix("").with_suffix(".manhattan.png")],
+        "clean": True
     }
 
 
