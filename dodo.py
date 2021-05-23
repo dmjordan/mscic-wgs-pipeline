@@ -9,10 +9,8 @@ import subprocess
 import sys
 import sysconfig
 import warnings
-from collections import namedtuple, ChainMap
-from functools import wraps, update_wrapper
 from pathlib import Path
-from typing import ClassVar, NamedTuple, List, Sequence, Optional, Iterable, Any, Dict
+from typing import ClassVar, List, Sequence, Optional, Dict
 
 import attr
 import hail as hl
@@ -20,7 +18,6 @@ import more_itertools
 import rpy2.rinterface as ri
 import rpy2.rinterface_lib.embedded
 import rpy2.robjects as ro
-from decorator import decorate, decorator
 import wrapt
 from doit.action import CmdAction
 from doit.dependency import MD5Checker
@@ -76,142 +73,168 @@ gwas_filtered_path = sample_matched_path.with_suffix(".GWAS_filtered.mt")
 rare_filtered_path = sample_matched_path.with_suffix(".rare_filtered.mt")
 exome_filtered_path = sample_matched_path.with_suffix(".exome_filtered.mt")
 ld_pruned_path = gwas_filtered_path.with_suffix(".LD_pruned.mt")
-white_only_path = sample_matched_path.with_suffix(".WHITE_only.mt")
-black_only_path = sample_matched_path.with_suffix(".BLACK_only.mt")
-asian_only_path = sample_matched_path.with_suffix(".ASIAN_only.mt")
-hispanic_only_path = sample_matched_path.with_suffix(".HISPANIC_only.mt")
-white_gwas_path = white_only_path.with_suffix(".GWAS_filtered.mt")
-black_gwas_path = black_only_path.with_suffix(".GWAS_filtered.mt")
-asian_gwas_path = asian_only_path.with_suffix(".GWAS_filtered.mt")
-hispanic_gwas_path = hispanic_only_path.with_suffix(".GWAS_filtered.mt")
-white_rare_path = white_only_path.with_suffix(".rare_filtered.mt")
-black_rare_path = black_only_path.with_suffix(".rare_filtered.mt")
-asian_rare_path = asian_only_path.with_suffix(".rare_filtered.mt")
-hispanic_rare_path = hispanic_only_path.with_suffix(".rare_filtered.mt")
-white_exome_path = white_only_path.with_suffix(".exome_filtered.mt")
-black_exome_path = black_only_path.with_suffix(".exome_filtered.mt")
-asian_exome_path = asian_only_path.with_suffix(".exome_filtered.mt")
-hispanic_exome_path = hispanic_only_path.with_suffix(".exome_filtered.mt")
-white_ld_path = ld_pruned_path.with_suffix(".WHITE_only.mt")
-black_ld_path = ld_pruned_path.with_suffix(".BLACK_only.mt")
-asian_ld_path = ld_pruned_path.with_suffix(".ASIAN_only.mt")
-hispanic_ld_path = ld_pruned_path.with_suffix(".HISPANIC_only.mt")
 
-vcf_endpoints = {"full": sample_matched_path,
-                 "lof": lof_filtered_path,
-                 "gwas": gwas_filtered_path,
-                 "rare": rare_filtered_path,
-                 "exome": exome_filtered_path,
-                 "ld": ld_pruned_path,
-                 "white_full": white_only_path,
-                 "black_full": black_only_path,
-                 "hispanic_full": hispanic_only_path,
-                 "asian_full": asian_only_path,
-                 "white_gwas": white_gwas_path,
-                 "black_gwas": black_gwas_path,
-                 "hispanic_gwas": hispanic_gwas_path,
-                 "asian_gwas": asian_gwas_path,
-                 "white_rare": white_rare_path,
-                 "black_rare": black_rare_path,
-                 "hispanic_rare": hispanic_rare_path,
-                 "asian_rare": asian_rare_path,
-                 "white_exome": white_exome_path,
-                 "black_exome": black_exome_path,
-                 "hispanic_exome": hispanic_exome_path,
-                 "asian_exome": asian_exome_path,
-                 "white_ld": white_ld_path,
-                 "black_ld": black_ld_path,
-                 "hispanic_ld": hispanic_ld_path,
-                 "asian_ld": asian_ld_path}
+base_paths = {
+    "full": sample_matched_path,
+    "lof": lof_filtered_path,
+    "gwas": gwas_filtered_path,
+    "rare": rare_filtered_path,
+    "exome": exome_filtered_path,
+    "ld": ld_pruned_path
+}
+all_subset_paths = base_paths.copy()
+for race in ("white", "black", "hispanic", "asian"):
+    for subset in {"full", "ld"}:
+        all_subset_paths[f"{race}_{subset}"] = all_subset_paths[subset].with_suffix(f".{race.upper()}_only.mt")
+    for subset, suffix in [ ("gwas", "GWAS_filtered"),
+                            ("lof", "LOF_filtered"),
+                            ("rare", "rare_filtered"),
+                            ("exome", "exome_filtered")]:
+        all_subset_paths[f"{race}_{subset}"] = all_subset_paths[f"{race}_full"].with_suffix(f".{suffix}.mt")
 
+class TaskDecorator:
+    def __new__(cls, *args, **kwargs):
+        obj = super().__new__(cls)
+        if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+            obj.__init__()
+            return obj(args[0])
+        else:
+            obj.__init__(*args, **kwargs)
+            return obj
 
-def extract_basename(task_dict, f):
-    if "basename" in task_dict:
-        return task_dict["basename"]
-    elif f.__name__.startswith("task_"):
-        return f.__name__[5:]
-    else:
-        raise ValueError("Can't figure out basename")
+    @property
+    def consumed_args(self):
+        return []
+
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        yield from self.iter_transformed_tasks(wrapped, *args, **kwargs)
+
+    def get_new_signature(self,  wrapped):
+        original_signature = inspect.signature(wrapped)
+        new_params = []
+        for param_name, param in original_signature.parameters.items():
+            if param_name not in self.consumed_args:
+                new_params.append(param)
+        new_signature = original_signature.replace(parameters=new_params)
+        return str(new_signature)
+
+    def extract_basename(self, wrapped, task_dict):
+        if "basename" in task_dict:
+            return task_dict["basename"]
+        elif wrapped.__name__.startswith("task_"):
+            return wrapped.__name__[5:]
+        else:
+            raise ValueError("Can't figure out basename")
+
+    def iter_transformed_tasks(self, wrapped, label=None, *args, **kwargs):
+        for task_dict in more_itertools.always_iterable(wrapped(*args, **kwargs), dict):
+            task_dict["basename"] = self.extract_basename(wrapped, task_dict)
+            if label is not None:
+                task_dict["name"] = f"{task_dict['name']}_{label}" if "name" in task_dict else label
+            yield task_dict
+
+    def __call__(self, wrapped):
+        return wrapt.decorator(self.generate_tasks(), adapter=wrapt.adapter_factory(self.get_new_signature))
 
 
 @attr.s(auto_attribs=True)
-class SubsetDecorator:
-    subsets: Dict[str, Dict[str, Any]] = attr.ib()
-    meta: Dict[str, Sequence[str]]
+class each_subset(TaskDecorator):
+    subsets: Sequence[str] = tuple(base_paths.keys())
+    use_races: bool = True
+    use_chroms: bool = True
+    include_all_races: bool = True
+    include_all_chroms: bool = True
 
-    @subsets.validator
-    def check_subsets_keys(self, attribute: attr.Attribute, value: Dict[str, Dict[str, Any]]):
-        if not more_itertools.all_equal(len(argspec) for argspec in value.values()):
-            raise ValueError(f"All values in {attribute.name} must have the same set of keys")
-        for argspec in value.values():
-            self.argnames = argspec.keys()
-            break
+    consumed_args: ClassVar[List[str]] = ['mtfile', 'race', 'subset', 'chrom']
 
-    def get_new_signature(self, f):
-        base_signature = inspect.signature(f)
-        new_params_dict = dict(base_signature.parameters)
-        for argname in self.argnames:
-            del new_params_dict[argname]
-        del new_params_dict["name"]
-        new_signature = base_signature.replace(parameters=new_params_dict.values())
-        return str(new_signature)
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        races: List[Optional[str]] = ['white', 'black', 'hispanic', 'asian']
+        chroms: List[Optional] = [str(chrom) for chrom in range(1,23)] + ["X"]
+        func_signature = inspect.signature(wrapped)
+        for subset in self.subsets:
+            for race in races + [None]:
+                if race is not None and not self.use_races:
+                    continue
+                label_without_chrom = f"{race}_{subset}" if race is not None else subset
+                path_without_chrom = all_subset_paths[label_without_chrom]
+                for chrom in chroms + [None]:
+                    if chrom is not None and not self.use_chroms:
+                        continue
+                    path = path_without_chrom.with_suffix(f".chr{chrom}.mt") if chrom is not None else path_without_chrom
+                    if len(self.subsets) == 1:
+                        # drop subset label
+                        if self.use_races:
+                            label = race if race is not None else "all"
+                            if chrom is not None:
+                                label += f"_chr{chrom}"
+                        else:
+                            label = chrom if chrom is not None else "all"
+                    else:
+                        label = f"{label_without_chrom}_chr{chrom}" if chrom is not None else label_without_chrom
+                    task_args = {}
+                    for arg, value in [('subset', subset), ('race', race), ('chrom', chrom), ('mtfile', path)]:
+                        if arg in func_signature.parameters:
+                            task_args[arg] = value
+                    for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **task_args, **kwargs):
+                        basename = task_dict["basename"]
+                        name = task_dict["name"]
+                        if (chrom is not None or self.include_all_chroms) and (race is not None or self.include_all_races):
+                            yield task_dict
 
-    def wrapper(self, wrapped, instance, args, kwargs):
-        basename = self.get_basename(wrapped)
-        for label, args_dict in self.subsets.items():
-            yield wrapped(name=label, *args, **args_dict, **kwargs)
-        for label, others in self.meta.items():
-            yield {
-                'name': label,
-                'actions': None,
-                'task_dep': [f"{basename}:{other}" for other in others]
-            }
-
-    def get_basename(self, wrapped):
-        if not wrapped.__name__.startswith("task_"):
-            raise ValueError("Can't figure out basename")
-        basename = wrapped.__name__[5:]
-        return basename
-
-    def __call__(self, f):
-        signature = self.get_new_signature(f)
-        return wrapt.decorator(self.wrapper, adapter=signature)(f)
-
-
-each_subset = SubsetDecorator(ChainMap({label: {'mtfile': vcf_endpoints[label]} for label in vcf_endpoints},
-                              {f"{label}_chr{chrom}": {'mtfile': vcf_endpoints[label].with_suffix(f".chr{chrom}.mt")}
-                                    for label, chrom in itertools.product(vcf_endpoints.keys(), itertools.chain(range(1,23), ['X']))}),
-                              ChainMap({f"{label}_race_split": [f"{label}_{race}" for race in ('white', 'black', 'asian', 'hispanic')]
-                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')},
-                              {f"{label}_chrom_split": [f"{label}_chr{chrom}" for chrom in itertools.chain(range(1,23), ['X'])]
-                                    for label in ('full', 'gwas', 'exome', 'rare', 'ld')}))
+                        if chrom is None and self.use_chroms:
+                            yield {
+                                "basename": basename,
+                                "name": f"{name}_chrom_split",
+                                "actions": None,
+                                "task_dep": [f"{basename}:{name}_{chrom}" for chrom in chroms]
+                            }
+                        if race is None and self.use_races:
+                            yield {
+                                "basename": basename,
+                                "name": f"{name}_race_split",
+                                "actions": None,
+                                "task_dep": [f"{basename}:{name}_{race}" for race in races]
+                            }
+                        if race is None and chrom is None and self.use_races and self.use_chroms:
+                            yield {
+                                "basename": basename,
+                                "name": f"{name}_race_and_chrom_split",
+                                "actions": None,
+                                "task_dep": [f"{basename}:{name}_{race}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
+                            }
 
 
-def each_race(**kwargs):
-    return SubsetDecorator({race: {key: vcf_endpoints[f"{race}_{subset}"] for key, subset in kwargs.items()} for race in ('white', 'black', 'hispanic', 'asian')},
-                           {"race_split": ('white', 'black', 'hispanic', 'asian')})
+class each_race(TaskDecorator):
+    def __init__(self, **path_args):
+        self.path_args = path_args
 
+    @property
+    def consumed_args(self):
+        return self.path_args.keys()
 
-class PhenotypeDecorator(SubsetDecorator):
-    @classmethod
-    def phenotypes_to_run(cls, task_name):
-        return {
-            'task_dep': [f"{task_name}:{phenotype}" for phenotype in get_succeeded_phenotypes()]
-        }
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        races: List[Optional[str]] = ['white', 'black', 'hispanic', 'asian']
+        for race in races + [None]:
+            if race is None:
+                label = "all"
+                resolved_path_args = {key: all_subset_paths[subset] for key, subset in self.path_args.items()}
+            else:
+                label = race
+                resolved_path_args = {key: all_subset_paths[f"{race}_{subset}"] for key, subset in self.path_args.items()}
+            kwargs.update(resolved_path_args)
+            for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **resolved_path_args, **kwargs):
+                basename = task_dict["basename"]
+                name = task_dict["name"]
+                yield task_dict
 
-    def wrapper(self, wrapped, instance, args, kwargs):
-        yield from super().wrapper(wrapped, instance, args, kwargs)
-        basename = self.get_basename(wrapped)
-        yield {
-            'name': 'phenotypes_to_run',
-            'actions': [(self.phenotypes_to_run, [basename])],
-            'task_dep': ['null_model:all']
-        }
-        yield {
-            'name': 'all',
-            'actions': None,
-            'calc_dep': [f"{basename}:phenotypes_to_run"]
-        }
+                if race is None:
+                    name = name[:-3]  # removes "all"
+                    yield  {
+                        "basename": basename,
+                        "name": f"{name}race_split",
+                        "actions": None,
+                        "task_dep": [f"{name}{race}" for race in races]
+                    }
 
 
 def get_phenotypes_list():
@@ -224,12 +247,96 @@ traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity
 bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
 
 
-each_phenotype_no_calcdep = SubsetDecorator({phenotype: {'phenotype': phenotype} for phenotype in get_phenotypes_list()},
-                                            {'traits_of_interest': traits_of_interest,
-                                             'blood_viral_load': bvl_traits})
-each_phenotype = PhenotypeDecorator({phenotype: {'phenotype': phenotype} for phenotype in get_phenotypes_list()},
-                                    {'traits_of_interest': traits_of_interest,
-                                     'blood_viral_load': bvl_traits})
+@attr.s(auto_attribs=True)
+class each_phenotype(TaskDecorator):
+    use_succeeded_for_all: bool = True
+
+    consumed_args: ClassVar[List[str]] = ["phenotype"]
+    phenotype_lists: ClassVar[Dict[str,List[str]]] = {"traits_of_interest": traits_of_interest,
+                                                      "blood_viral_load": bvl_traits}
+
+    @classmethod
+    def phenotypes_to_run(cls, basename):
+        return {
+            'task_dep': [f"{basename}:{phenotype}" for phenotype in get_succeeded_phenotypes()]
+        }
+
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        for phenotype in get_phenotypes_list():
+            yield from self.iter_transformed_tasks(wrapped, phenotype, phenotype=phenotype, *args, **kwargs)
+        generated_phenotypes_to_run = {}
+        for task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
+            basename = task_dict["basename"]
+            name = task_dict.get("name")
+            all_traits_task = {
+                "basename": basename,
+                'name': f"{name}_all" if name is not None else 'all',
+                'actions': None
+            }
+            if self.use_succeeded_for_all:
+                if generated_phenotypes_to_run.get(basename, False):
+                    yield {
+                        'basename': basename,
+                        'name': f"_phenotypes_to_run",
+                        'actions': [(self.phenotypes_to_run, [basename])],
+                        'task_dep': ['null_model:all']
+                    }
+                    generated_phenotypes_to_run[basename] = True
+                all_traits_task['calc_dep'] = f"{basename}:_phenotypes_to_run"
+            else:
+                all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
+            yield all_traits_task
+            for list_name, phenotypes_list in self.phenotype_lists.items():
+                yield {
+                    'basename': basename,
+                    'name': f"{name}_{list_name}" if name is not None else list_name,
+                    "actions": None,
+                    "task_dep": [f"{basename}:{phenotype}" for phenotype in phenotypes_list]
+                }
+
+
+class phenotype_pairs(each_phenotype):
+    consumed_args: ClassVar[List[str]] = ["trait1", "trait2"]
+
+    @classmethod
+    def phenotypes_to_run(cls, basename):
+        return {
+            'task_dep': [f"{basename}:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(get_succeeded_phenotypes(), 2)]
+        }
+
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
+            yield from self.iter_transformed_tasks(wrapped, f"{trait1}.{trait2}", trait1=trait1, trait2=trait2, *args, **kwargs)
+        generated_phenotypes_to_run = {}
+        for task_dict in self.iter_transformed_tasks(wrapped, None, trait1="dummy", trait2="dummy", *args, **kwargs):  # to get task names
+            basename = task_dict["basename"]
+            name = task_dict.get("name")
+            all_traits_task = {
+                "basename": basename,
+                'name': f"{name}_all" if name is not None else 'all',
+                'actions': None
+            }
+            if self.use_succeeded_for_all:
+                if generated_phenotypes_to_run.get(basename, False):
+                    yield {
+                        'basename': basename,
+                        'name': f"_phenotypes_to_run",
+                        'actions': [(self.phenotypes_to_run, [basename])],
+                        'task_dep': ['null_model:all']
+                    }
+                    generated_phenotypes_to_run[basename] = True
+                all_traits_task['calc_dep'] = f"{basename}:_phenotypes_to_run"
+            else:
+                all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
+            yield all_traits_task
+            for list_name, phenotypes_list in self.phenotype_lists.items():
+                yield {
+                    'basename': basename,
+                    'name': f"{name}_{list_name}" if name is not None else list_name,
+                    "actions": None,
+                    "task_dep": [f"{basename}:{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(phenotypes_list, 2)]
+                }
+
 
 
 covariates_path = Path(
@@ -270,13 +377,13 @@ class MD5DirectoryChecker(MD5Checker):
 
 
 DOIT_CONFIG = {'check_file_uptodate': MD5DirectoryChecker,
-               'default_tasks': ['gwas_plots', 'race_prediction'] +
+               'default_tasks': ['gwas_plots:traits_of_interest', 'race_prediction'] +
                                 [f'build_vcf:{race}_full' for race in ("white", "black", "asian", "hispanic")]
                }
 
 
 @attr.s(auto_attribs=True)
-class bsub:
+class bsub(TaskDecorator):
     time: str = "12:00"
     mem_gb: int = 8
     cpus: int = 1
@@ -294,28 +401,12 @@ class bsub:
                                            "-oo {job_name}.%J.log " \
                                            "{'< ' if script else ''} "
 
-    def __new__(cls, *args, **kwargs):
-        obj = super().__new__(cls)
-        # @bsub is syntactic sugar for @bsub()
-        if len(args) == 1 and inspect.isfunction(args[0]):
-            obj.__init__()
-            return obj(args[0])
-        else:
-            obj.__init__(*args, **kwargs)
-            return obj
-
-    def bsubify_tasks(self, f, *args, **kwargs):
-        if f.__name__.startswith("task_"):
-            func_basename = f.__name__[5:]
-        else:
-            func_basename = None  # hopefully doit will deal appropriately with None where a basename is needed
-        for task_dict in more_itertools.always_iterable(f(*args, **kwargs), base_type=dict):
-            if task_dict["actions"] is None or task_dict.get("name") == "phenotypes_to_run":
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        for task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
+            if task_dict["actions"] is None or task_dict.get("name", "").startswith("_"):
                 yield task_dict
                 continue
-            basename = task_dict.get("basename", func_basename)
-            if basename is None:
-                raise ValueError("Task defined without task_ function name needs a basename")
+            basename = task_dict["basename"]
             task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
             job_name = task_name.replace(":", "_")
             bsub_action = BsubAction(job_name, self, task_dict["actions"][0])
@@ -330,7 +421,6 @@ class bsub:
 
             bwait_task = task_dict.copy()
             bwait_task.update({
-                'basename': basename,
                 'actions': [f"bwait -w 'done(%(job_id)s)' || sed -n '2!d;/Done$/!{{q1}}' {job_name}.%(job_id)s.log"]
                            + task_dict["actions"][1:],  # bsub only works on the first action, others are followup/cleanup
                 'getargs': {'job_id': (f"bsub_{task_name}", 'job_id')},
@@ -350,9 +440,6 @@ class bsub:
 
     def format_bsub_command(self, cmd, job_name):
         return self.get_bsub_invocation(job_name) + shlex.quote(cmd)
-
-    def __call__(self, f):
-        return decorate(f, self.bsubify_tasks)
 
 
 class BsubAction(CmdAction):
@@ -406,28 +493,6 @@ class bsub_hail(bsub):
         return self.get_bsub_invocation(job_name) + shlex.quote(hail_submit_script)
 
 
-def task_initialize_hail():
-    os.environ["HAIL_HOME"] = str(Path(sysconfig.get_path("purelib")) / "hail")
-    if "LSB_JOBID" in os.environ:
-        hostname = socket.gethostname()
-        os.environ["SPARK_LOG_DIR"] = str(Path("../../scratch/hail/logs/").resolve())
-        os.environ["SPARK_WORKER_DIR"] = str(Path("../../scratch/hail/worker/").resolve())
-        os.environ["SPARK16ASTER"] = socket.gethostname()
-        os.environ["SPARK_MASTER_PORT"] = "6311"
-        os.environ["SPARK_PID_DIR"] = f"/tmp/{os.environ['LSB_JOBID']}_{os.environ['LSB_JOBINDEX']}"
-        os.environ["SPARK_WORKER_MEMORY"] = "20G"
-        os.environ["SPARK_DAEMON_MEMORY"] = "20G"
-        return {"actions": ["lsf-start-spark.sh",
-                            (hail_wgs.start_hail, [f"spark://{hostname}:6311"])],
-                "teardown": ["lsf-stop-spark.sh", hl.stop]
-                }
-    else:
-        return {
-            "actions": [(hail_wgs.start_hail, [f"local[{num_cpus}]"])],
-            "teardown": [hl.stop]
-        }
-
-
 def clean_dir_targets(task):
     for target in task.targets:
         target = Path(target)
@@ -478,9 +543,8 @@ def task_match_samples():
 
 @bsub_hail(cpus=128)  # takes about 10 minutes on 128 cores (for full)
 @each_subset
-def task_mt2plink(name, mtfile):
+def task_mt2plink(mtfile):
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-plink {mtfile}",
                     f"sed -i s/^chr// {mtfile.with_suffix('.bim')}"],
         "file_dep": [mtfile],
@@ -510,9 +574,8 @@ def task_king():
 
 @bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
 @each_race(input_path='full')
-def task_gwas_filter(name, input_path):
+def task_gwas_filter(input_path):
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} gwas-filter {input_path}"],
         "file_dep": [input_path],
         "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
@@ -522,9 +585,8 @@ def task_gwas_filter(name, input_path):
 
 @bsub_hail(cpus=128) # takes about 10 minutes on 128 cores (for all)
 @each_race(input_path="full")
-def task_rare_filter(name, input_path):
+def task_rare_filter(input_path):
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} rare-filter {input_path}"],
         "file_dep": [input_path],
         "targets": [input_path.with_suffix(".rare_filtered.mt")],
@@ -534,10 +596,9 @@ def task_rare_filter(name, input_path):
 
 @bsub_hail(cpus=128, mem_gb=12) # takes about 10 minutes on 128 cores (for all)
 @each_race(input_path="full")
-def task_exome_filter(name, input_path):
+def task_exome_filter(input_path):
     output_path = input_path.with_suffix(".exome_filtered.mt")
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} restrict-to-bed {input_path} {exome_bed_path} {output_path}"],
         "file_dep": [input_path],
         "targets": [output_path],
@@ -547,9 +608,8 @@ def task_exome_filter(name, input_path):
 
 @bsub_hail(cpus=128)
 @each_race(input_path="full")
-def task_ld_prune(name, input_path):  # takes about 20 minutes on 128 cores (for all)
+def task_ld_prune(input_path):  # takes about 20 minutes on 128 cores (for all)
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} ld-prune {input_path}"],
         "file_dep": [input_path],
         "targets": [input_path.with_suffix(".LD_pruned.mt")],
@@ -565,10 +625,9 @@ def task_initialize_r():
 
 
 @each_subset
-def task_plink2snpgds(name, mtfile):
+def task_plink2snpgds(mtfile):
     output_gds = mtfile.with_suffix(".snp.gds")
     return {
-        "name": name,
         "actions": [(wrap_r_function("build_snp_gds"), [mtfile.with_suffix("")])],
         "file_dep": [mtfile.with_suffix(".bed"),
                      mtfile.with_suffix(".bim"),
@@ -580,9 +639,8 @@ def task_plink2snpgds(name, mtfile):
 
 
 @each_race(inpath="ld", outpath="full")
-def task_pcair(name, inpath, outpath):
+def task_pcair(inpath, outpath):
     return {
-        "name": name,
         "actions": [(wrap_r_function("run_pcair"), [inpath.with_suffix(".snp.gds"), outpath.with_suffix("")])],
         "targets": [outpath.with_suffix(".PCAir.RDS"),
                     outpath.with_suffix(".PCAir.txt")] +
@@ -610,17 +668,11 @@ def task_race_prediction():
 
 
 @bsub_hail(cpus=128)
-@SubsetDecorator({f"{race}_{subset}": {'race': race.upper(),
-                                       'mtfile': vcf_endpoints[subset]}
-                  for subset, race in itertools.product(['full', 'ld'],
-                                                        ['white', 'black', 'hispanic', 'asian'])},
-                 {subset: [f"{race}_{subset}" for race in ('white', 'black', 'hispanic', 'asian')]
-                  for subset in ('full', 'ld')})
-def task_split_races(name, race, mtfile):
+@each_subset(subsets=["full", "ld"], use_chroms=False, include_all_races=False)
+def task_split_races(race, mtfile):
     listfile = f"{race}.indiv_list.txt"
     outfile = mtfile.with_suffix(f".{race}_only.mt")
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} subset-mt-samples {mtfile} {listfile} {outfile}"],
         "file_dep": [mtfile, listfile],
         "targets": [outfile],
@@ -651,10 +703,9 @@ def task_pcrelate():
 
 @bsub_hail(cpus=128)  # takes about 20 minutes on 128 cores (for full)
 @each_subset
-def task_mt2vcfshards(name, mtfile):
+def task_mt2vcfshards(mtfile):
     output_vcf_dir = mtfile.with_suffix(".shards.vcf.bgz")
     return {
-        "name": name,
         "actions": [f"{scriptsdir / 'hail_wgs.py'} convert-mt-to-vcf-shards {mtfile} {vcf_path}"],
         "file_dep": [mtfile],
         "targets": [output_vcf_dir],
@@ -663,12 +714,11 @@ def task_mt2vcfshards(name, mtfile):
 
 
 @each_subset
-def task_build_vcf(name, mtfile):
+def task_build_vcf(mtfile):
     vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
     output_vcf = mtfile.with_suffix(".vcf.bgz")
     output_tbi = mtfile.with_suffix(".vcf.bgz.tbi")
     return {
-        "name": name,
         "actions": [f"ml bcftools && bcftools concat --naive -Oz -o {output_vcf!s} {vcf_shards_dir!s}/part-*.bgz",
                     f"ml htslib && tabix {output_vcf!s}"],
         "file_dep": [vcf_shards_dir],
@@ -678,8 +728,8 @@ def task_build_vcf(name, mtfile):
 
 
 @bsub(mem_gb=16, cpus=128)
-@each_phenotype_no_calcdep
-def task_null_model(name, phenotype):
+@each_phenotype(use_succeeded_for_all=False)
+def task_null_model(phenotype):
     return {
         "name": name,
         "actions": [
@@ -703,11 +753,10 @@ def get_succeeded_phenotypes():
 
 @bsub(mem_gb=16, cpus=128)
 @each_subset
-def task_vcf2seqgds_shards(name, mtfile):
+def task_vcf2seqgds_shards(mtfile):
     vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
     gds_shards_dir = mtfile.with_suffix(".shards.seq.gds")
     return {
-        "name": name,
         "actions": [
             f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_vcf2gds.R'!s} {vcf_shards_dir!s}"],
         "file_dep": [vcf_shards_dir],
@@ -718,9 +767,8 @@ def task_vcf2seqgds_shards(name, mtfile):
 
 @bsub(cpus=128, mem_gb=16)
 @each_phenotype
-def task_run_gwas(name, phenotype):
+def task_run_gwas(phenotype):
     return {
-        "name": name,
         "actions": [
             f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_gwas.R'!s} {sample_matched_path.with_suffix('').resolve()!s} {phenotype}"],
         "targets": [Path(f"{phenotype}.GENESIS.assoc.txt").resolve()],
@@ -778,11 +826,10 @@ def task_lof_filter():
 
 @bsub(cpus=64)
 @each_subset
-def task_vcf2seqgds_single(name, mtfile):
+def task_vcf2seqgds_single(mtfile):
     vcf_shards_dir = mtfile.with_suffix(".shards.vcf.bgz")
     output_gds = mtfile.with_suffix(".seq.gds")
     return {
-        "name":     name,
         "actions":  [f"Rscript {scriptsdir / 'seqvcf2gds.R'} {vcf_shards_dir} {output_gds}"],
         "file_dep": [vcf_shards_dir],
         "targets":  [output_gds]
@@ -790,15 +837,10 @@ def task_vcf2seqgds_single(name, mtfile):
 
 
 @bsub(cpus=128, mem_gb=16)
-@PhenotypeDecorator({f'{phenotype}_{subset}': {'phenotype': phenotype,
-                                               'subset': subset,
-                                               'mtfile': vcf_endpoints[subset]}
-                     for phenotype, subset in itertools.product(get_phenotypes_list(), ['lof', 'rare'])},
-                    {'blood_viral_load': bvl_traits,
-                     'traits_of_interest': traits_of_interest})
-def task_run_smmat(name, phenotype, subset, mtfile):
+@each_phenotype
+@each_subset(subsets=["lof", "rare"], use_chroms=False, use_races=False)
+def task_run_smmat(phenotype, subset, mtfile):
     return {
-        "name": name,
         "actions": [f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
                                                 f"{sample_matched_path.with_suffix('')}.{phenotype}.null.RDS "
                                                 f"{phenotype}.{subset}"],
@@ -812,10 +854,9 @@ def task_run_smmat(name, phenotype, subset, mtfile):
 
 
 @bsub_hail(cpus=128)
-@each_subset
-def task_split_chromosomes(name, mtfile):
+@each_subset(use_chroms=False)
+def task_split_chromosomes(mtfile):
     return {
-        "name": name,
         "actions":  [f"{scriptsdir / 'hail_wgs.py'} split-chromosomes {mtfile}"],
         "file_dep": [mtfile],
         "targets":  [mtfile.with_suffix(f".chr{chr}.mt") for chr in list(range(1,23)) + ['X']],
@@ -824,14 +865,12 @@ def task_split_chromosomes(name, mtfile):
 
 
 @bsub
-@SubsetDecorator({f'chr{chrom}': {'chrom': chrom} for chrom in itertools.chain(range(1,23), ['X'])},
-                 {'all': [f'chr{chrom}' for chrom in itertools.chain(range(1,23), ['X'])]})
-def task_ld_scores(name, chrom):
+@each_subset(subsets=["gwas"], use_chroms=True, include_all_chroms=False)
+def task_ld_scores(chrom):
     ldsc_path = gwas_filtered_path.with_suffix(".ld_chr")
     ldsc_path.mkdir(exist_ok=True)
     bfile_prefix = gwas_filtered_path.with_suffix(f".chr{chrom}")
     return {
-        "name":    name,
         "actions": ["ml ldsc && " \
                     f"ldsc.py --bfile {bfile_prefix} " \
                     f"--l2 --ld-wind-kb 1000 --out {ldsc_path!s}/{chrom}"],
@@ -847,10 +886,9 @@ def task_ld_scores(name, chrom):
 
 @bsub
 @each_phenotype
-def task_munge_sumstats(name, phenotype):
+def task_munge_sumstats(phenotype):
     assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
     return {
-            "name": name,
             "file_dep": [assoc_file],
             "targets": [assoc_file.with_suffix(".sumstats.gz")],
             "actions": ["ml ldsc && " \
@@ -864,17 +902,12 @@ def task_munge_sumstats(name, phenotype):
 
 
 @bsub(mem_gb=16)
-@SubsetDecorator({f"{trait1}.{trait2}": {'trait1': trait1,
-                                         'trait2': trait2}
-                  for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2)},
-                 {'traits_of_interest': [f'{trait1}.{trait2}' for trait1, trait2 in itertools.combinations(traits_of_interest, 2)],
-                  'blood_viral_load': [f'{trait1}.{trait2}' for trait1, trait2 in itertools.combinations(bvl_traits, 2)]})
+@phenotype_pairs
 def task_ld_score_regression(name, trait1, trait2):
     ldscore_path = gwas_filtered_path.with_suffix(".ld_chr")
     sumstats1 = Path(f"{trait1}.GENESIS.assoc.sumstats.gz").resolve()
     sumstats2 = Path(f"{trait2}.GENESIS.assoc.sumstats.gz").resolve()
     return {
-        "name": name,
         "actions": ["ml ldsc && " \
                     f"ldsc.py --rg {sumstats1!s},{sumstats2!s} "\
                     f"--ref-ld-chr {ldscore_path!s}/ "\
@@ -887,13 +920,12 @@ def task_ld_score_regression(name, trait1, trait2):
 
 @bsub(mem_gb=20)
 @each_phenotype
-def task_metaxcan_harmonize(name, phenotype):
+def task_metaxcan_harmonize(phenotype):
     gwas_parsing_script = scriptsdir / "summary-gwas-imputation" / "src" / "gwas_parsing.py"
     metadata_file = Path("../../resources/metaxcan_data/reference_panel_1000G/variant_metadata.txt.gz").resolve()
     assoc_file = Path(f"{phenotype}.GENESIS.assoc.txt").resolve()
     harmonized_file = assoc_file.with_suffix(".metaxcan_harmonized.txt")
     return {
-        "name": name,
         "actions": [f"python {gwas_parsing_script} "
                     "-separator ' ' "
                     f"-gwas_file {assoc_file!s} "
@@ -963,7 +995,7 @@ def task_s_predixcan():
 
 @bsub(mem_gb=8)
 @each_phenotype
-def task_s_multixcan(name, phenotype):
+def task_s_multixcan(phenotype):
     s_multixcan_script = scriptsdir / "MetaXcan" / "software" / "SMulTiXcan.py"
     metaxcan_data_dir = Path("../../resources/metaxcan_data").resolve()
     gtex_models_path = metaxcan_data_dir / "models" / "eqtl" / "mashr"
@@ -973,7 +1005,6 @@ def task_s_multixcan(name, phenotype):
     assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
     output_file = predixcan_output_dir / f"{phenotype}.smultixcan.txt"
     return {
-        "name": name,
         "actions": [f"python {s_multixcan_script!s} "
                     f"--models_folder {gtex_models_path!s} "
                     '--models_name_pattern "mashr_(.*).db" '
