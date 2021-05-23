@@ -107,7 +107,8 @@ class TaskDecorator:
         return []
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
-        yield from self.iter_transformed_tasks(wrapped, *args, **kwargs)
+        for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
+            yield task_dict
 
     def get_new_signature(self,  wrapped):
         original_signature = inspect.signature(wrapped)
@@ -183,7 +184,7 @@ class each_subset(TaskDecorator):
                         if (chrom is not None or self.include_all_chroms) and (race is not None or self.include_all_races):
                             yield task_dict
                             if original_name is not None:
-                                task_expansions.setdefault((basename, original_name), new_name)
+                                task_expansions.setdefault((basename, original_name), []).append(new_name)
 
                         if chrom is None and self.use_chroms:
                             yield {
@@ -225,6 +226,7 @@ class each_race(TaskDecorator):
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
         races: List[Optional[str]] = ['white', 'black', 'hispanic', 'asian']
+        task_expansions: Dict[Tuple[str, str], List[str]] = {}
         for race in races + [None]:
             if race is None:
                 label = "all"
@@ -232,19 +234,27 @@ class each_race(TaskDecorator):
             else:
                 label = race
                 resolved_path_args = {key: all_subset_paths[f"{race}_{subset}"] for key, subset in self.path_args.items()}
-            for task_dict in self.iter_transformed_tasks(wrapped, label, *args, **resolved_path_args, **kwargs):
-                basename = task_dict["basename"]
-                name = task_dict["name"]
+            for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, label, *args, **resolved_path_args, **kwargs):
+                new_name = task_dict["name"]
                 yield task_dict
+                if original_name is not None:
+                    task_expansions.setdefault((basename, original_name), []).append(new_name)
 
                 if race is None:
-                    name = name[:-3]  # removes "all"
+                    new_name = new_name[:-3]  # removes "all"
                     yield  {
                         "basename": basename,
-                        "name": f"{name}race_split",
+                        "name": f"{new_name}race_split",
                         "actions": None,
-                        "task_dep": [f"{name}{race}" for race in races]
+                        "task_dep": [f"{new_name}{race}" for race in races]
                     }
+        for basename, original_name in task_expansions:
+            yield {
+                "basename": basename,
+                "name": original_name,
+                "actions": None,
+                "task_dep": [f"{basename}:{new_name}" for new_name in task_expansions[basename, original_name]]
+            }
 
 
 def get_phenotypes_list():
@@ -273,14 +283,14 @@ class each_phenotype(TaskDecorator):
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
         for phenotype in get_phenotypes_list():
-            yield from self.iter_transformed_tasks(wrapped, phenotype, phenotype=phenotype, *args, **kwargs)
+            for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, phenotype, phenotype=phenotype, *args, **kwargs):
+                yield task_dict
         generated_phenotypes_to_run = {}
-        for task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
-            basename = task_dict["basename"]
-            name = task_dict.get("name")
+        for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", *args, **kwargs):  # to get task names
+            new_name = task_dict.get("name")
             all_traits_task = {
                 "basename": basename,
-                'name': f"{name}_all" if name is not None else 'all',
+                'name': new_name if new_name is not None else 'all',
                 'actions': None
             }
             if self.use_succeeded_for_all:
@@ -294,15 +304,20 @@ class each_phenotype(TaskDecorator):
                     generated_phenotypes_to_run[basename] = True
                 all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
             else:
-                all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
+                if new_name is None:
+                    all_traits_task['task_dep'] = [f"{basename}:{phenotype}" for phenotype in get_phenotypes_list()]
+                else:
+                    all_traits_task['task_dep'] = [f"{basename}:{new_name}_{phenotype}" for phenotype in get_phenotypes_list()]
             yield all_traits_task
             for list_name, phenotypes_list in self.phenotype_lists.items():
                 yield {
                     'basename': basename,
-                    'name': f"{name}_{list_name}" if name is not None else list_name,
+                    'name': f"{new_name}_{list_name}" if new_name is not None else list_name,
                     "actions": None,
                     "task_dep": [f"{basename}:{phenotype}" for phenotype in phenotypes_list]
                 }
+
+
 
 
 class phenotype_pairs(each_phenotype):
@@ -316,7 +331,8 @@ class phenotype_pairs(each_phenotype):
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
         for trait1, trait2 in itertools.permutations(get_phenotypes_list(), 2):
-            yield from self.iter_transformed_tasks(wrapped, f"{trait1}.{trait2}", trait1=trait1, trait2=trait2, *args, **kwargs)
+            for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, f"{trait1}.{trait2}", trait1=trait1, trait2=trait2, *args, **kwargs):
+                yield task_dict
         generated_phenotypes_to_run = {}
         for task_dict in self.iter_transformed_tasks(wrapped, None, trait1="dummy", trait2="dummy", *args, **kwargs):  # to get task names
             basename = task_dict["basename"]
@@ -412,11 +428,10 @@ class bsub(TaskDecorator):
                                            "{'< ' if script else ''} "
 
     def generate_tasks(self, wrapped, instance, args, kwargs):
-        for task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
+        for basename, original_name, task_dict in self.iter_transformed_tasks(wrapped, *args, **kwargs):
             if task_dict["actions"] is None or task_dict.get("name", "").startswith("_"):
                 yield task_dict
                 continue
-            basename = task_dict["basename"]
             task_name = f"{basename}:{task_dict['name']}" if 'name' in task_dict else basename
             job_name = task_name.replace(":", "_")
             bsub_action = BsubAction(job_name, self, task_dict["actions"][0])
