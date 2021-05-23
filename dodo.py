@@ -337,6 +337,57 @@ class phenotype_pairs(each_phenotype):
                 }
 
 
+class phenotypes_by_tissues(each_phenotype):
+    @staticmethod
+    def get_tissues_list():
+        gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
+        tissues = []
+        for model in gtex_models_path.glob("*.db"):
+            model_name = model.with_suffix("").name
+            tissues.append(model_name[6:])  # "mashr_"
+        return tissues
+
+    consumed_args: ClassVar[List[str]] = ["phenotype", "tissue"]
+
+    @classmethod
+    def phenotypes_to_run(cls, basename):
+        return {
+            'task_dep': [f"{basename}:{phenotype}_{tissue}" for phenotype, tissue in itertools.product(get_succeeded_phenotypes(), cls.get_tissues_list())]
+        }
+
+    def generate_tasks(self, wrapped, instance, args, kwargs):
+        for phenotype, tissue in itertools.product(get_succeeded_phenotypes(), self.get_tissues_list()):
+            yield from self.iter_transformed_tasks(wrapped, f"{phenotype}_{tissue}", phenotype=phenotype, tissue=tissue, *args, **kwargs)
+        generated_phenotypes_to_run = {}
+        for task_dict in self.iter_transformed_tasks(wrapped, None, phenotype="dummy", tissue="dummy", *args, **kwargs):  # to get task names
+            basename = task_dict["basename"]
+            name = task_dict.get("name")
+            all_traits_task = {
+                "basename": basename,
+                'name': f"{name}_all" if name is not None else 'all',
+                'actions': None
+            }
+            if self.use_succeeded_for_all:
+                if generated_phenotypes_to_run.get(basename, False):
+                    yield {
+                        'basename': basename,
+                        'name': f"_phenotypes_to_run",
+                        'actions': [(self.phenotypes_to_run, [basename])],
+                        'task_dep': ['null_model:all']
+                    }
+                    generated_phenotypes_to_run[basename] = True
+                all_traits_task['calc_dep'] = [f"{basename}:_phenotypes_to_run"]
+            else:
+                all_traits_task['task_dep'] = [f"{basename}:{phenotype}_{tissue}" for phenotype, tissue in itertools.product(get_phenotypes_list(), self.get_tissues_list())]
+            yield all_traits_task
+            for list_name, phenotypes_list in self.phenotype_lists.items():
+                yield {
+                    'basename': basename,
+                    'name': f"{name}_{list_name}" if name is not None else list_name,
+                    "actions": None,
+                    "task_dep": [f"{basename}:{phenotype}_{tissue}" for phenotype, tissue in itertools.product(phenotypes_list, self.get_tissues_list())]
+                }
+
 
 covariates_path = Path(
     "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/Biobank_clinical_data_table_by_blood_sample_deidentified_UNCONSENTED.csv.gz")
@@ -935,48 +986,38 @@ def task_metaxcan_harmonize(phenotype):
     }
 
 
-#TODO: convert this to a version of the each_phenotype decorator
 @bsub
-def task_s_predixcan():
+@phenotypes_by_tissues
+def task_s_predixcan(phenotype, tissue):
     s_predixcan_script = scriptsdir / "MetaXcan" / "software" / "SPrediXcan.py"
-    gtex_models_path = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve()
+    model = Path("../../resources/metaxcan_data/models/eqtl/mashr").resolve() / f"mashr_{tissue}.db"
     output_dir = Path("./spredixcan_results").resolve()
     output_dir.mkdir(exist_ok=True)
-    model_names = []
-    for model in gtex_models_path.glob("*.db"):
-        model_name = model.with_suffix("").name
-        model_names.append(model_name)
-        for phenotype in get_phenotypes_list():
-            assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
-            output_file = output_dir / f"{phenotype}.{model_name}.csv"
-            yield {
-                "name": f"{phenotype}_{model_name}",
-                "actions": [f"python {s_predixcan_script!s} "
-                            f"--gwas_file {assoc_file!s} "
-                            "--snp_column panel_variant_id "
-                            "--chromosome_column chromosome "
-                            "--position_column position "
-                            "--effect_allele_column effect_allele "
-                            "--non_effect_allele_column non_effect_allele "
-                            "--beta_column effect_size "
-                            "--se_column standard_error "
-                            "--pvalue_column pvalue "
-                            "--model_db_snp_key varID "
-                            "--keep_non_rsid "
-                            "--additional_output "
-                            "--overwrite "
-                            "--throw "
-                            f"--model_db_path {model!s} "
-                            f"--covariance {model.with_suffix('.txt.gz')!s} "
-                            f"--output_file {output_file!s}"],
-                "file_dep": [assoc_file],
-                "targets": [output_file],
-                "clean": True
-            }
-    yield {
-        "name": "traits_of_interest",
-        "actions": None,
-        "task_dep": [f"s_predixcan:{phenotype}_{model_name}" for phenotype, model_name in itertools.product(traits_of_interest, model_names)]
+    assoc_file = Path(f"{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt").resolve()
+    output_file = output_dir / f"{phenotype}.mashr_{tissue}.csv"
+    return {
+        "name": f"{phenotype}_{tissue}",
+        "actions": [f"python {s_predixcan_script} "
+                    f"--gwas_file {assoc_file} "
+                    "--snp_column panel_variant_id "
+                    "--chromosome_column chromosome "
+                    "--position_column position "
+                    "--effect_allele_column effect_allele "
+                    "--non_effect_allele_column non_effect_allele "
+                    "--beta_column effect_size "
+                    "--se_column standard_error "
+                    "--pvalue_column pvalue "
+                    "--model_db_snp_key varID "
+                    "--keep_non_rsid "
+                    "--additional_output "
+                    "--overwrite "
+                    "--throw "
+                    f"--model_db_path {model} "
+                    f"--covariance {model.with_suffix('.txt.gz')} "
+                    f"--output_file {output_file}"],
+        "file_dep": [assoc_file],
+        "targets": [output_file],
+        "clean": True
     }
 
 @bsub(mem_gb=8)
