@@ -186,21 +186,21 @@ class each_subset(TaskDecorator):
                                 "basename": basename,
                                 "name": f"{name}_chrom_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{name}_{chrom}" for chrom in chroms]
+                                "task_dep": [f"{basename}:{name}_chr{chrom}" for chrom in chroms]
                             }
                         if race is None and self.use_races:
                             yield {
                                 "basename": basename,
                                 "name": f"{name}_race_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{name}_{race}" for race in races]
+                                "task_dep": [f"{basename}:{race}_{name}" for race in races]
                             }
                         if race is None and chrom is None and self.use_races and self.use_chroms:
                             yield {
                                 "basename": basename,
                                 "name": f"{name}_race_and_chrom_split",
                                 "actions": None,
-                                "task_dep": [f"{basename}:{name}_{race}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
+                                "task_dep": [f"{basename}:{race}_{name}_chr{chrom}" for race, chrom in itertools.product(races, chroms)]
                             }
 
 
