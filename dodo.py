@@ -719,9 +719,10 @@ def task_race_prediction():
 
 @bsub_hail(cpus=128)
 @each_subset(subsets=["full", "ld"], use_chroms=False, include_all_races=False)
-def task_split_races(race, mtfile):
-    listfile = f"{race}.indiv_list.txt"
-    outfile = mtfile.with_suffix(f".{race}_only.mt")
+def task_split_races(subset, race):
+    mtfile = all_subset_paths[subset]
+    listfile = f"{race.upper()}.indiv_list.txt"
+    outfile = mtfile.with_suffix(f".{race.upper()}_only.mt")
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} subset-mt-samples {mtfile} {listfile} {outfile}"],
         "file_dep": [mtfile, listfile],
