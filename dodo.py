@@ -232,7 +232,7 @@ class each_race(TaskDecorator):
                         "basename": basename,
                         "name": f"{name}race_split",
                         "actions": None,
-                        "task_dep": [f"{name}{race}" for race in races]
+                        "task_dep": [f"{basename}:{name}{race}" for race in races]
                     }
 
 
@@ -720,9 +720,11 @@ def task_race_prediction():
 @bsub_hail(cpus=128)
 @each_subset(subsets=["full", "ld"], use_chroms=False, include_all_races=False)
 def task_split_races(subset, race):
+    if race is None:
+        race = "all"
     mtfile = all_subset_paths[subset]
-    listfile = f"{str(race).upper()}.indiv_list.txt"
-    outfile = mtfile.with_suffix(f".{str(race).upper()}_only.mt")
+    listfile = f"{race.upper()}.indiv_list.txt"
+    outfile = mtfile.with_suffix(f".{race.upper()}_only.mt")
     return {
         "actions": [f"{scriptsdir / 'hail_wgs.py'} subset-mt-samples {mtfile} {listfile} {outfile}"],
         "file_dep": [mtfile, listfile],
