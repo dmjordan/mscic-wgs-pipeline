@@ -326,3 +326,13 @@ run_smmat <- function(gds_filename, null_model_filename, phenotype_name) {
     dev.off()
     1
 }
+
+make_isoform_tpms_table <- function (infile, outfile) {
+    transcript_abundance_experiment <- readRDS(infile)
+    assay(transcript_abundance_experiment, "abundance") %>%
+      as_tibble %>% rename_all(~ paste0("WholeBlood.", 1:length(.x))) %>%
+      add_column(transcript_id=rowData(transcript_abundance_experiment)$tx_id,
+                 gene_id=rowData(transcript_abundance_experiment)$gene_id,
+                 .before=1) %>% write_tsv(outfile)
+    1
+}

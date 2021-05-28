@@ -6,6 +6,7 @@ import click
 import hail as hl
 from bokeh.io import export_png
 
+import tx_annotation
 
 #cli = click.Group("hail-wgs")
 @click.group("hail-wgs")
@@ -260,6 +261,36 @@ cli.add_command(click.Command("restrict-to-bed", None, restrict_to_bed,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["bed_path"], type=ClickPathlibPath()),
                                click.Argument(["out_mt_path"], type=ClickPathlibPath())]))
+
+
+def transform_tpm_table(isoform_tpm_tsv_path, tx_summary_ht_path, gene_maximums_ht_path):
+    tx_annotation.get_gtex_summary(str(isoform_tpm_tsv_path), str(tx_summary_ht_path))
+    tx_annotation.get_gene_expression(str(tx_summary_ht_path), str(gene_maximums_ht_path))
+cli.add_command(click.Command("transform-tpm-table", None, transform_tpm_table,
+                              [click.Argument(["isoform_tpm_tsv_path"], type=ClickPathlibPath()),
+                               click.Argument(["tx_summary_ht_path"], type=ClickPathlibPath()),
+                               click.Argument(["gene_maximums_ht_path"], type=ClickPathlibPath())]))
+
+
+def annotate_pext(mt_path, tx_summary_ht_path, gene_maximums_ht_path):
+    mt = hl.read_matrix_table(str(mt_path))
+    tx_summary_ht = hl.read_table(str(tx_summary_ht_path))
+    mt = tx_annotation.tx_annotate_mt(mt, tx_summary_ht, gene_maximums_ht_path)
+    mt.write(str(mt_path.with_suffix(".pext_annotated.mt")))
+cli.add_command(click.Command("annotate_pext", None, annotate_pext,
+                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
+                               click.Argument(["tx_summary_ht_path"], type=ClickPathlibPath()),
+                               click.Argument(["gene_maximums_ht_path"], type=ClickPathlibPath())]))
+
+
+def filter_hi_pext(mt_path):
+    mt_path = mt_path.resolve()
+    mt = hl.read_matrix_table(str(mt_path))
+    mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.tx_annotation > 0.9))
+    mt.write(str(mt_path.with_suffix(".pext_filtered.mt")), overwrite=True)
+cli.add_command(click.Command("filter-hi-pext", None, filter_hi_pext(),
+                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
+
 
 
 if __name__ == "__main__":
