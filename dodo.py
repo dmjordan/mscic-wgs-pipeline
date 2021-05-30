@@ -127,7 +127,7 @@ design_matrix_path = Path(
     "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv")
 
 traits_of_interest = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
-        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased", 
+        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 bvl_traits = ["blood_viral_load_bitscore", "blood_viral_load_bitscore_log", "blood_viral_load_bitscore_percentile", "blood_viral_load_detected"]
 
@@ -417,7 +417,7 @@ def task_gwas_filter():
             "targets": [input_path.with_suffix(".GWAS_filtered.mt")],
             "clean": [clean_dir_targets]
         }
-    yield { 
+    yield {
         "name": "race_split",
         "actions": None,
         "task_dep": [f"gwas_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
@@ -438,7 +438,7 @@ def task_rare_filter():
             "targets": [input_path.with_suffix(".rare_filtered.mt")],
             "clean": [clean_dir_targets]
         }
-    yield { 
+    yield {
         "name": "race_split",
         "actions": None,
         "task_dep": [f"rare_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
@@ -460,7 +460,7 @@ def task_exome_filter():
             "targets": [output_path],
             "clean": [clean_dir_targets]
         }
-    yield { 
+    yield {
         "name": "race_split",
         "actions": None,
         "task_dep": [f"exome_filter:{race}" for race in ("white", "black", "hispanic", "asian")]
@@ -481,7 +481,7 @@ def task_ld_prune():  # takes about 20 minutes on 128 cores (for all)
             "targets": [input_path.with_suffix(".LD_pruned.mt")],
             "clean": [clean_dir_targets]
         }
-    yield { 
+    yield {
         "name": "race_split",
         "actions": None,
         "task_dep": [f"ld_prune:{race}" for race in ("white", "black", "hispanic", "asian")]
@@ -528,7 +528,7 @@ def task_pcair():
             "setup": ["initialize_r"],
             "clean": True
         }
-    yield { 
+    yield {
         "name": "race_split",
         "actions": None,
         "task_dep": [f"pcair:{race}" for race in ("white", "black", "hispanic", "asian")]
@@ -549,7 +549,7 @@ def task_race_prediction():
             }
 
 
-@bsub_hail(cpus=128) 
+@bsub_hail(cpus=128)
 def task_split_races():
     for name, mtfile in [("full", sample_matched_path),
                          ("ld", ld_pruned_path)]:
@@ -778,12 +778,60 @@ def task_vcf2seqgds_single():
             }
 
 
+def task_isoform_expression():
+    isoform_abundance_experiment = Path("/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/RNASeq_SummarizedExperiment/SummarizedExperiment_Kallisto_Transcripts_RNA_Samples.RDS")
+    isoform_table = Path("transcript_isoform_tpm_table.tsv").resolve()
+    return {
+        "actions": [(wrap_r_function("make_isoform_tpms_table"),
+                     [isoform_abundance_experiment, isoform_table])],
+        "file_dep": [isoform_abundance_experiment],
+        "targets": [isoform_table],
+        "clean": True
+    }
+
+
+@bsub_hail(cpus=128)
+def task_transform_isoform_expression():
+    isoform_table = Path("transcript_isoform_tpm_table.tsv").resolve()
+    tx_summary_ht = Path("tx_annot.tx_summary.ht").resolve()
+    gene_maximums_ht = Path("tx_annot.gene_maximums.ht").resolve()
+    return {
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} transform-tpm-table {isoform_table} {tx_summary_ht} {gene_maximums_ht}"],
+        "file_dep": [isoform_table],
+        "targets": [tx_summary_ht, gene_maximums_ht],
+        "clean": [clean_dir_targets]
+    }
+
+
+@bsub_hail(cpus=128)
+def task_annotate_pext():
+    tx_summary_ht = Path("tx_annot.tx_summary.ht").resolve()
+    gene_maximums_ht = Path("tx_annot.gene_maximums.ht").resolve()
+    return {
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} annotate-pext {vep_path} {tx_summary_ht} {gene_maximums_ht}"],
+        "file_dep": [tx_summary_ht, gene_maximums_ht, vep_path],
+        "targets": [vep_path.with_suffix(".pext_annotated.mt")],
+        "clean": [clean_dir_targets]
+    }
+
+@bsub_hail(cpus=128)
+def task_filter_pext():
+    pext_path = vep_path.with_suffix(".pext_annotated.mt")
+    return {
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-hi-pext {pext_path}"],
+        "file_dep": [pext_path],
+        "targets": [pext_path.with_suffix(".pext_filtered.mt")],
+        "clean": [clean_dir_targets]
+    }
+
 @bsub(cpus=128, mem_gb=16)
 def task_run_smmat():
-    for filter in "lof", "rare":
+    for filter in "lof", "rare", "pext":
         for phenotype in get_phenotypes_list():
             if filter == "lof":
                 mtfile = lof_filtered_path
+            elif filter == "pext":
+                mtfile = vep_path.with_suffix(".pext_annotated.pext_filtered.mt")
             else:
                 mtfile = rare_filtered_path
             yield {
