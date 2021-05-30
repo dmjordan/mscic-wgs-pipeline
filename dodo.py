@@ -69,6 +69,7 @@ qc_path = mt_path.with_suffix(".QC_filtered.mt")
 sample_matched_path = qc_path.with_suffix(".sample_matched.mt")
 vep_path = sample_matched_path.with_suffix(".VEP.mt")
 lof_filtered_path = vep_path.with_suffix(".LOF_filtered.mt")
+pext_filtered_path = vep_path.with_suffix(".pext_annotated.pext_filtered.mt")
 gwas_filtered_path = sample_matched_path.with_suffix(".GWAS_filtered.mt")
 rare_filtered_path = sample_matched_path.with_suffix(".rare_filtered.mt")
 exome_filtered_path = sample_matched_path.with_suffix(".exome_filtered.mt")
@@ -96,6 +97,7 @@ hispanic_ld_path = ld_pruned_path.with_suffix(".HISPANIC_only.mt")
 
 vcf_endpoints = {"full": sample_matched_path,
                  "lof": lof_filtered_path,
+                 "pext": pext_filtered_path,
                  "gwas": gwas_filtered_path,
                  "rare": rare_filtered_path,
                  "exome": exome_filtered_path,
@@ -816,11 +818,11 @@ def task_annotate_pext():
 
 @bsub_hail(cpus=128)
 def task_filter_pext():
-    pext_path = vep_path.with_suffix(".pext_annotated.mt")
+    pext_input_path = vep_path.with_suffix(".pext_annotated.mt")
     return {
-        "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-hi-pext {pext_path}"],
-        "file_dep": [pext_path],
-        "targets": [pext_path.with_suffix(".pext_filtered.mt")],
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-hi-pext {pext_input_path}"],
+        "file_dep": [pext_input_path],
+        "targets": [pext_input_path.with_suffix(".pext_filtered.mt")],
         "clean": [clean_dir_targets]
     }
 
@@ -831,7 +833,7 @@ def task_run_smmat():
             if filter == "lof":
                 mtfile = lof_filtered_path
             elif filter == "pext":
-                mtfile = vep_path.with_suffix(".pext_annotated.pext_filtered.mt")
+                mtfile = pext_filtered_path
             else:
                 mtfile = rare_filtered_path
             yield {
