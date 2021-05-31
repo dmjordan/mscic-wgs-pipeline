@@ -11,6 +11,7 @@ suppressPackageStartupMessages({
     library(TxDb.Hsapiens.UCSC.hg38.knownGene)
     library(tidyverse)
     library(qqman)
+    library(SummarizedExperiment)
 })
 
 cl <- NULL

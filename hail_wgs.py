@@ -273,9 +273,12 @@ cli.add_command(click.Command("transform-tpm-table", None, transform_tpm_table,
 
 
 def annotate_pext(mt_path, tx_summary_ht_path, gene_maximums_ht_path):
+    mt_path = mt_path.resolve()
+    tx_summary_ht_path = tx_summary_ht_path.resolve()
+    gene_maximums_ht_path = gene_maximums_ht_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     tx_summary_ht = hl.read_table(str(tx_summary_ht_path))
-    mt = tx_annotation.tx_annotate_mt(mt, tx_summary_ht, gene_maximums_ht_path)
+    mt = tx_annotation.tx_annotate_mt(mt, tx_summary_ht, str(gene_maximums_ht_path))
     mt.write(str(mt_path.with_suffix(".pext_annotated.mt")))
 cli.add_command(click.Command("annotate-pext", None, annotate_pext,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
@@ -286,7 +289,7 @@ cli.add_command(click.Command("annotate-pext", None, annotate_pext,
 def filter_hi_pext(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
-    mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.tx_annotation > 0.9))
+    mt = mt.filter_rows(mt.tx_annotation.any(lambda x: x.mean_proportion > 0.9))
     mt.write(str(mt_path.with_suffix(".pext_filtered.mt")), overwrite=True)
 cli.add_command(click.Command("filter-hi-pext", None, filter_hi_pext,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
