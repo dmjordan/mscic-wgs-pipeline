@@ -336,3 +336,11 @@ make_isoform_tpms_table <- function (infile, outfile) {
                  .before=1) %>% write_tsv(outfile)
     1
 }
+
+args <- commandArgs(trailingOnly=TRUE)
+switch(
+    args[[1]],
+    plink2snpgds=build_snp_gds(args[[2]]),
+    pcair=run_pcair(args[[2]], args[[3]]),
+    pcrelate=run_pcrelate(args[[2]])
+)

@@ -60,3 +60,6 @@ def predict_races():
             plt.savefig(f"625_Samples.cohort.QC_filtered.sample_matched.PC{i}v{j}.predicted_races.pdf")
             plt.clf()
 
+
+if __name__ == "__main__":
+    predict_races()

@@ -216,5 +216,5 @@ def build_design_matrix(covariates_path, design_matrix_path):
     return {'phenotypes': all_phenotypes}
 
 
-# if __name__ == "__main__":
-#     build_design_matrix(design_matrix_path, covariates_path)
+ if __name__ == "__main__":
+     build_design_matrix(snakemake.output[0], snakemake.input[0])
