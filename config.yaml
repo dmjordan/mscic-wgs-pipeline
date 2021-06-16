@@ -1,0 +1,6 @@
+cluster: "snakemake_bsub_wrapper.py"
+queue: "premium"
+project: "mscic"
+threads: 1
+time_min: 720
+mem_mb: 8000
