@@ -100,15 +100,14 @@ rule vcf2seqgds_single:
 
 rule qc:
     input:
-        mt=f"{COHORT_STEM}.mt",
-        covariates=COVARIATES_FILE
+        mt=f"{COHORT_STEM}.mt"
     output:
         mt=directory(f"{QC_STEM}.mt")
     resources:
         cpus=128
     params:
         hail_script=HAIL_WGS,
-        hail_args="match-samples {input.mt} {input.covariates}"
+        hail_cmd="run-hail-qc"
     script: HAIL_WRAPPER
 
 rule match_samples:
