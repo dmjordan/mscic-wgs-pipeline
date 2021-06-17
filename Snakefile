@@ -34,7 +34,8 @@ rule vcf2mt:
         cpus=128
     params:
         hail_script=HAIL_WGS,
-        hail_args="convert-vcf-to-mt {input.vcf} {output.mt}"
+        pass_output=True,
+        hail_cmd="convert-vcf-to-mt"
     script: HAIL_WRAPPER
 
 rule mt2plink:
@@ -42,8 +43,13 @@ rule mt2plink:
         mt="{prefix}.mt"
     output:
         multiext("{prefix}", ".bed", ".bim", "fam")
-    resources: hail=1
-    shell: "{HAIL_WGS} convert-mt-to-plink {input.mt}" # TODO: fix chr prefix
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="convert-mt-to-plink"
+    script: HAIL_WRAPPER
+    # TODO: fix chr prefix
 
 rule plink2snpgds:
     input:
@@ -57,8 +63,13 @@ rule mt2vcfshards:
         mt="{prefix}.mt"
     output:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
-    resources: hail=1
-    shell: "{HAIL_WGS} convert-mt-to-vcf-shards {input.mt} {output.shards_dir}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="convert-mt-to-vcf-shards",
+        pass_output=True
+    script: HAIL_WRAPPER
 
 rule build_vcf:
     input:
@@ -78,9 +89,9 @@ rule vcf2seqgds_shards:
         shards_dir="{prefix}.shards.vcf.bgz"
     output:
         shards_dir=directory("{prefix}.shards.seq.gds")
-    threads: 128
     resources:
-        mem_mb=16000
+        mem_mb=16000,
+        cpus=128
     shell:
         """
         ml openmpi
@@ -92,8 +103,9 @@ rule vcf2seqgds_single:
         shards_dir="{prefix}.shards.vcf.bgz"
     output:
         gds="{prefix}.seq.gds"
-    threads: 48
-    resources: single_host=1
+    resources:
+        cpus=48,
+        single_host=1
     shell: "Rscript {SCRIPTSDIR}/seqvcf2gds.R {input.shards_dir} {output.gds}"
 
 # qc steps
@@ -112,12 +124,16 @@ rule qc:
 
 rule match_samples:
     input:
-        mt = f"{QC_STEM}.mt",
-        covariates=COVARIATES_FILE
+        covariates = COVARIATES_FILE,
+        mt = f"{QC_STEM}.mt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} match-samples {input.covariates} {input.qc}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="match-samples"
+    script: HAIL_WRAPPER
 
 # race and ancestry steps
 
@@ -126,8 +142,9 @@ rule king:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     output:
         multiext("{prefix}", ".kin0", "X.kin", "X.kin0")
-    threads: 16
-    resources: single_host=1
+    resources:
+        cpus=16,
+        single_host=1
     shell: "ml king && king -b {input[0]} --kinship --cpus {threads} --prefix {wildcards.prefix}"
 
 rule pcair:
@@ -163,8 +180,13 @@ rule split_races:
         mt=f"{SAMPLE_MATCHED_STEM}.mt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} subset-mt-samples {input.mt} {input.indiv_list} {output.mt}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="subset-mt-samples",
+        pass_output=True
+    script: HAIL_WRAPPER
 
 rule pcrelate:
     input:
@@ -181,32 +203,51 @@ rule gwas_filter:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.GWAS_filtered.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} gwas-filter {input.mt}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="gwas-filter"
+    script: HAIL_WRAPPER
 
 rule rare_filter:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.rare_filtered.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} rare-filter {input.mt}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="rare-filter"
+    script: HAIL_WRAPPER
 
 rule exome_filter:
     input:
-        mt="{prefix}.mt"
+        mt="{prefix}.mt",
+        bed=EXOME_BED
     output:
         mt=directory("{prefix}.exome_filtered.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} restrict-to-bed {input.mt} {EXOME_BED} {output.mt}"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="restrict-to-bed",
+        pass_output=True
+    script: HAIL_WRAPPER
 
 rule prune_ld:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.LD_pruned.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} ld-prune {input.mt}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_cmd="ld-prune"
+    script: HAIL_WRAPPER
 
 # association tests
 
@@ -227,8 +268,8 @@ rule null_model:
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
         rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
-    threads: 128
     resources:
+        cpus=128,
         mem_mb=16000
     shell:
         """
@@ -242,9 +283,9 @@ rule run_gwas:
         null_nodel=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
         txt="{phenotype}.GENESIS.assoc.txt"
-    threads: 128
     resources:
-        mem_mb=16000
+        mem_mb=16000,
+        cpus=128
     shell:
         """
         ml openmpi 
