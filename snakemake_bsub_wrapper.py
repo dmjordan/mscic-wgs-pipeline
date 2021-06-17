@@ -1,12 +1,15 @@
 #!/usr/bin/env python
-import shlex
+import shlex, re
 import sys, subprocess, sysconfig
 from snakemake.utils import read_job_properties
 
 jobscript = sys.argv[1]
 job_properties = read_job_properties(jobscript)
 
-bsub_cmd = "bsub -q {queue} -P acc_{project} -W {time_min} -n {threads} -R rusage[mem={mem_mb}]".format_map(job_properties)
+bsub_cmd = "bsub -q {resources[queue]} -P acc_{resources[project]} -W {resources[time_min]} -n {threads} -R rusage[mem={resources[mem_mb]}] -oo {rule}.%J.log".format_map(job_properties)
+if job_properties['resources'].get("single_host", 0) == 1:
+    bsub_cmd += " -R span[hosts=1]"
+
 
 if job_properties.get('hail', 0) == 1:
     submit_script = shlex.quote(f"""ml spark/2.4.5 java
@@ -28,4 +31,7 @@ if job_properties.get('hail', 0) == 1:
     --driver-memory {job_properties['mem_mb'] - 4} {jobscript}""")
 else:
     submit_script = jobscript
-subprocess.run(bsub_cmd + " " + submit_script)
+output = subprocess.check_output(bsub_cmd + " " + submit_script, shell=True, text=True)
+match = re.match(f"Job <(\\d+)> is submitted to queue <{job_properties['resources']['queue']}>.", output)
+if match is not None:
+    print(match.group(1))

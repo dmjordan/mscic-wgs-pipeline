@@ -94,7 +94,7 @@ run_pcair <- function(gdsfile, out_prefix) {
     }
 
     saveRDS(pcair_result, file=rdsfile)
-    write_delim(pcair_result$vectors, file=txtfile)
+    write_delim(pc_table, path=txtfile)
     1
 }
 

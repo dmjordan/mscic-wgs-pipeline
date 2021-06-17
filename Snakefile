@@ -61,8 +61,9 @@ rule build_vcf:
 rule vcf2seqgds_shards:
     input: "{prefix}.shards.vcf.bgz"
     output: directory("{prefix}.shards.seq.gds")
+    threads: 128
     resources:
-        threads=128, mem_mb=16000
+        mem_mb=16000
     shell:
         """
         ml openmpi
@@ -72,7 +73,8 @@ rule vcf2seqgds_shards:
 rule vcf2seqgds_single:
     input: "{prefix}.shards.vcf.bgz"
     output: "{prefix}.seq.gds"
-    resources: threads=64
+    threads: 48
+    resources: single_host=1
     shell: "Rscript {SCRIPTSDIR}/seqvcf2gds.R {prefix}.shards.vcf.bgz {prefix}.seq.gds"
 
 # qc steps
@@ -94,25 +96,25 @@ rule match_samples:
 rule king:
     input: expand("{{prefix}}.{suffix}", suffix=["bed", "bim", "fam"])
     output: expand("{{prefix}}{suffix}", suffix=[".kin0", "X.kin", "X.kin0"])
-    resources: threads=16
-    shell: "ml king && king -b {input[0]} --kinship --cpus {resources.threads} --prefix {wildcards.prefix}"
+    threads: 16
+    resources: single_host=1
+    shell: "ml king && king -b {input[0]} --kinship --cpus {threads} --prefix {wildcards.prefix}"
 
 rule pcair:
     input:
         gds=f"{LD_STEM}.snp.gds",
         king=f"{SAMPLE_MATCHED_STEM}.kin0"
-    output: expand(f"{SAMPLE_MATCHED_STEM}.PCAir.{{suffix}}", suffix=["RDS", "txt"])
-    params:
-        output_stem=lambda wildcards, output: Path(output[0]).with_suffix("")
+    output: multiext(f"{SAMPLE_MATCHED_STEM}.PCAir", ".RDS", ".txt")
+    params: output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem
     shell: "Rscript {SEQARRAY_GENESIS} pcair {input.gds} {params.output_stem}"
 
 
-# use rule pcair as pcair_race with:
-#    input:
-#        gds=f"{LD_STEM}.{{race}}_only.snp.gds",
-#        king=f"{SAMPLE_MATCHED_STEM}.kin0"
-#    output:
-#        multiext(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir", ".RDS", ".txt")
+use rule pcair as pcair_race with:
+   input:
+       gds=f"{LD_STEM}.{{race}}_only.snp.gds",
+       king=f"{SAMPLE_MATCHED_STEM}.kin0"
+   output:
+       multiext(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir", ".RDS", ".txt")
 
 rule race_prediction:
     input:
@@ -186,8 +188,9 @@ rule null_model:
         f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
         f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
+    threads: 128
     resources:
-        threads=128, mem_mb=16000
+        mem_mb=16000
     shell:
         """
         ml openmpi
@@ -200,8 +203,9 @@ rule run_gwas:
         f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
         "{phenotype}.GENESIS.assoc.txt"
+    threads: 128
     resources:
-        threads=128, mem_mb=16000
+        mem_mb=16000
     shell:
         """
         ml openmpi 
