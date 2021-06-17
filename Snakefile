@@ -25,77 +25,98 @@ rule gwas_traits_of_interest:
 # format conversions
 
 rule vcf2mt:
-    input: ORIGINAL_VCF
-    output: directory(f"{COHORT_STEM}.mt")
+    input:
+        vcf=ORIGINAL_VCF
+    output:
+        mt=directory(f"{COHORT_STEM}.mt")
     resources: hail=1
-    shell: f"{HAIL_WGS} convert-vcf-to-mt {ORIGINAL_VCF} {COHORT_STEM}.mt"
+    shell: f"{HAIL_WGS} convert-vcf-to-mt {input.vcf} {output.mt}"
 
 rule mt2plink:
-    input: "{prefix}.mt"
-    output: expand("{{prefix}}.{suffix}", suffix=["bed", "bim", "fam"])
+    input:
+        mt="{prefix}.mt"
+    output:
+        multiext("{prefix}", ".bed", ".bim", "fam")
     resources: hail=1
-    shell: "{HAIL_WGS} convert-mt-to-plink {input[0]}" # TODO: fix chr prefix
+    shell: "{HAIL_WGS} convert-mt-to-plink {input.mt}" # TODO: fix chr prefix
 
 rule plink2snpgds:
-    input: expand("{{prefix}}.{suffix}", suffix=["bed", "bim", "fam"])
-    output: "{prefix}.snp.gds"
+    input:
+        multiext("{prefix}", ".bed", ".bim", ".fam")
+    output:
+        gds="{prefix}.snp.gds"
     shell: "Rscript {SEQARRAY_GENESIS} plink2snpgds {wildcards.prefix}"
 
 rule mt2vcfshards:
-    input: "{prefix}.mt"
-    output: directory("{prefix}.shards.vcf.bgz")
+    input:
+        mt="{prefix}.mt"
+    output:
+        shards_dir=directory("{prefix}.shards.vcf.bgz")
     resources: hail=1
-    shell: "{HAIL_WGS} convert-mt-to-vcf-shards {input[0]} {output[0]}"
+    shell: "{HAIL_WGS} convert-mt-to-vcf-shards {input.mt} {output.shards_dir}"
 
 rule build_vcf:
-    input: "{prefix}.shards.vcf.bgz"
-    output: "{prefix}.vcf.bgz"
+    input:
+        shards_dir="{prefix}.shards.vcf.bgz"
+    output:
+        vcf="{prefix}.vcf.bgz"
     shell:
         """
         ml bcftools
         ml htslib
-        bcftools concat --naive -Oz -o {prefix}.vcf.bgz {prefix}.shards.vcf.bgz/part-*.bgz
-        tabix {prefix}.vcf.bgz
+        bcftools concat --naive -Oz -o {output.vcf} {input.shards_dir}/part-*.bgz
+        tabix {output.vcf}
         """
 
 rule vcf2seqgds_shards:
-    input: "{prefix}.shards.vcf.bgz"
-    output: directory("{prefix}.shards.seq.gds")
+    input:
+        shards_dir="{prefix}.shards.vcf.bgz"
+    output:
+        shards_dir=directory("{prefix}.shards.seq.gds")
     threads: 128
     resources:
         mem_mb=16000
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_vcf2gds.R {input[0]}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_vcf2gds.R {input.shards_dir}
         """
 
 rule vcf2seqgds_single:
-    input: "{prefix}.shards.vcf.bgz"
-    output: "{prefix}.seq.gds"
+    input:
+        shards_dir="{prefix}.shards.vcf.bgz"
+    output:
+        gds="{prefix}.seq.gds"
     threads: 48
     resources: single_host=1
-    shell: "Rscript {SCRIPTSDIR}/seqvcf2gds.R {prefix}.shards.vcf.bgz {prefix}.seq.gds"
+    shell: "Rscript {SCRIPTSDIR}/seqvcf2gds.R {input.shards_dir} {output.gds}"
 
 # qc steps
 
 rule qc:
-    input: f"{COHORT_STEM}.mt"
-    output: directory(f"{QC_STEM}.mt")
+    input:
+        mt=f"{COHORT_STEM}.mt"
+    output:
+        mt=directory(f"{QC_STEM}.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} run-hail-qc 625_Samples.cohort.mt"
+    shell: "{HAIL_WGS} run-hail-qc {input.mt}"
 
 rule match_samples:
-    input: f"{QC_STEM}.mt", COVARIATES_FILE
-    output: directory(f"{SAMPLE_MATCHED_STEM}.mt")
+    input:
+        mt = f"{QC_STEM}.mt",
+        covariates=COVARIATES_FILE
+    output:
+        mt=directory(f"{SAMPLE_MATCHED_STEM}.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} match-samples {COVARIATES_FILE} {QC_STEM}.mt"
+    shell: "{HAIL_WGS} match-samples {input.covariates} {input.qc}"
 
 # race and ancestry steps
 
 rule king:
-    input: expand("{{prefix}}.{suffix}", suffix=["bed", "bim", "fam"])
-    output: expand("{{prefix}}{suffix}", suffix=[".kin0", "X.kin", "X.kin0"])
+    input:
+        multiext("{prefix}", ".bed", ".bim", ".fam")
+    output:
+        multiext("{prefix}", ".kin0", "X.kin", "X.kin0")
     threads: 16
     resources: single_host=1
     shell: "ml king && king -b {input[0]} --kinship --cpus {threads} --prefix {wildcards.prefix}"
@@ -104,7 +125,8 @@ rule pcair:
     input:
         gds=f"{LD_STEM}.snp.gds",
         king=f"{SAMPLE_MATCHED_STEM}.kin0"
-    output: multiext(f"{SAMPLE_MATCHED_STEM}.PCAir", ".RDS", ".txt")
+    output:
+        multiext(f"{SAMPLE_MATCHED_STEM}.PCAir", ".RDS", ".txt")
     params: output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem
     shell: "Rscript {SEQARRAY_GENESIS} pcair {input.gds} {params.output_stem}"
 
@@ -118,11 +140,11 @@ use rule pcair as pcair_race with:
 
 rule race_prediction:
     input:
-        COVARIATES_FILE,
-        f"{SAMPLE_MATCHED_STEM}.PCAir"
+        covariates=COVARIATES_FILE,
+        pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt"
     output:
         expand("{race}.indiv_list.txt", race=["WHITE", "BLACK", "HISPANIC", "ASIAN"]),
-        f"{SAMPLE_MATCHED_STEM}.race_and_PCA.txt"
+        table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.txt"
     script: SCRIPTSDIR / "race_prediction.py"
 
 
@@ -131,52 +153,60 @@ rule split_races:
         indiv_list="{race}.indiv_list.txt",
         mt=f"{SAMPLE_MATCHED_STEM}.mt"
     output:
-        directory(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.mt")
+        mt=directory(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} subset-mt-samples {input.mt} {input.indiv_list} {output[0]}"
+    shell: "{HAIL_WGS} subset-mt-samples {input.mt} {input.indiv_list} {output.mt}"
 
 rule pcrelate:
     input:
-        f"{SAMPLE_MATCHED_STEM}.PCAir.RDS",
-        f"{LD_STEM}.snp.gds"
+        pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.RDS",
+        gds=f"{LD_STEM}.snp.gds"
     output:
-        f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
     shell: "Rscript {SEQARRAY_GENESIS} pcrelate {SAMPLE_MATCHED_STEM}"
 
 # variant subsets
 
 rule gwas_filter:
-    input: "{prefix}.mt"
-    output: directory("{prefix}.GWAS_filtered.mt")
+    input:
+        mt="{prefix}.mt"
+    output:
+        mt=directory("{prefix}.GWAS_filtered.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} gwas-filter {output[0]}"
+    shell: "{HAIL_WGS} gwas-filter {input.mt}"
 
 rule rare_filter:
-    input: "{prefix}.mt"
-    output: directory("{prefix}.rare_filtered.mt")
+    input:
+        mt="{prefix}.mt"
+    output:
+        mt=directory("{prefix}.rare_filtered.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} rare-filter {prefix}.mt"
+    shell: "{HAIL_WGS} rare-filter {input.mt}"
 
 rule exome_filter:
-    input: "{prefix}.mt"
-    output: directory("{prefix}.exome_filtered.mt")
+    input:
+        mt="{prefix}.mt"
+    output:
+        mt=directory("{prefix}.exome_filtered.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} restrict-to-bed {prefix}.mt {EXOME_BED}"
+    shell: "{HAIL_WGS} restrict-to-bed {input.mt} {EXOME_BED} {output.mt}"
 
 rule prune_ld:
-    input: "{prefix}.mt"
-    output: directory("{prefix}.LD_pruned.mt")
+    input:
+        mt="{prefix}.mt"
+    output:
+        mt=directory("{prefix}.LD_pruned.mt")
     resources: hail=1
-    shell: "{HAIL_WGS} ld-prune {input[0]}"
+    shell: "{HAIL_WGS} ld-prune {input.mt}"
 
 # association tests
 
 rule design_matrix:
     input:
         COVARIATES_FILE,
-        "flowcells.csv",
-        f"{SAMPLE_MATCHED_STEM}.PCAir.txt",
-        "MSCIC_blood_viral_load_predictions.csv"
+        flowcells="flowcells.csv",
+        pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt",
+        bvl="MSCIC_blood_viral_load_predictions.csv"
     output:
         DESIGN_MATRIX
     script:
@@ -185,24 +215,24 @@ rule design_matrix:
 rule null_model:
     input:
         DESIGN_MATRIX,
-        f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     threads: 128
     resources:
         mem_mb=16000
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_null_model_exhaustive.R {output[0]} {wildcards.phenotype}"
+        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_null_model_exhaustive.R {output.rds} {wildcards.phenotype}"
         """
 
 rule run_gwas:
     input:
-        f"{GWAS_STEM}.shards.seq.gds",
-        f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
+        gds=f"{GWAS_STEM}.shards.seq.gds",
+        null_nodel=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
-        "{phenotype}.GENESIS.assoc.txt"
+        txt="{phenotype}.GENESIS.assoc.txt"
     threads: 128
     resources:
         mem_mb=16000
