@@ -49,7 +49,6 @@ rule mt2plink:
         hail_script=HAIL_WGS,
         hail_cmd="convert-mt-to-plink"
     script: HAIL_WRAPPER
-    # TODO: fix chr prefix
 
 rule plink2snpgds:
     input:

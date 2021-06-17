@@ -4,6 +4,7 @@ from pathlib import Path
 import click
 
 import hail as hl
+import pandas as pd
 from bokeh.io import export_png
 
 import tx_annotation
@@ -211,6 +212,9 @@ def convert_mt_to_plink(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     hl.export_plink(mt, str(mt_path.with_suffix("")), fam_id=mt.s, ind_id=mt.s)
+    bimfile = pd.read_csv(mt_path.with_suffix(".bim"), delimiter="\t", header=None)
+    bimfile[0] = bimfile[0].str.slice(3)
+    bimfile.to_csv(mt_path.with_suffix(".bim"), sep="\t", header=False, index=False)
 cli.add_command(click.Command("convert-mt-to-plink", None, convert_mt_to_plink,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
