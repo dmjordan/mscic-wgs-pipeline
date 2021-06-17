@@ -12,7 +12,7 @@ new_env_variables = {
 env = os.environ.copy()
 env.update(new_env_variables)
 
-hail_submit_script =
+hail_submit_script = \
 f"""ml spark/2.4.5 java
 ml -python
 lsf-spark-submit.sh \
@@ -22,8 +22,8 @@ lsf-spark-submit.sh \
 --conf spark.executor.extraJavaOptions='-Djava.io.tmpdir=/local/tmp' \
 --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
 --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
---executor-memory {snakemake.resources.mem_mb - 4000} \
---driver-memory {snakemake.resources.mem_mb - 4000} \
+--executor-memory {snakemake.resources.mem_mb - 4000}M \
+--driver-memory {snakemake.resources.mem_mb - 4000}M \
 {snakemake.params.hail_script} {snakemake.params.hail_args}"""
 
 hail_process = subprocess.run(hail_submit_script, env=env, shell=True)

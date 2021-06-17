@@ -288,7 +288,7 @@ def filter_hi_pext(mt_path):
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.tx_annotation > 0.9))
     mt.write(str(mt_path.with_suffix(".pext_filtered.mt")), overwrite=True)
-cli.add_command(click.Command("filter-hi-pext", None, filter_hi_pext(),
+cli.add_command(click.Command("filter-hi-pext", None, filter_hi_pext,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 

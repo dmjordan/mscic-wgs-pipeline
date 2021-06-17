@@ -12,9 +12,9 @@ GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
 
 SCRIPTSDIR = Path('../../scripts/WGS/').resolve()
-HAIL_WGS = SCRIPTSDIR / "hail_wgs.py"
-HAIL_WRAPPER = SCRIPTSDIR / "lsf_hail_wrapper.py"
-SEQARRAY_GENESIS = SCRIPTSDIR / "seqarray_genesis.R"
+HAIL_WGS = str(SCRIPTSDIR / "hail_wgs.py")
+HAIL_WRAPPER = str(SCRIPTSDIR / "lsf_hail_wrapper.py")
+SEQARRAY_GENESIS = str(SCRIPTSDIR / "seqarray_genesis.R")
 
 TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
         "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
@@ -30,10 +30,11 @@ rule vcf2mt:
         vcf=ORIGINAL_VCF
     output:
         mt=directory(f"{COHORT_STEM}.mt")
-    threads: 128
+    resources: 
+        cpus=128
     params:
         hail_script=HAIL_WGS,
-        hail_args=f"convert-vcf-to-mt {input.vcf} {output.mt}"
+        hail_args=lambda wildcards, input, output: f"convert-vcf-to-mt {input.vcf} {output.mt}"
     script: HAIL_WRAPPER
 
 rule mt2plink:

@@ -1,8 +1,10 @@
 cluster: "snakemake_bsub_wrapper.py"
 cluster-status: "cluster_status.py"
 jobs: 1000
+local-cores: 48
 default-resources:
     - mem_mb=8000
     - time_min=720
+    - cpus=1
     - queue="premium"
     - project="mscic"
