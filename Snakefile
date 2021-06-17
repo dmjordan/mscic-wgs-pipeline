@@ -42,7 +42,7 @@ rule mt2plink:
     input:
         mt="{prefix}.mt"
     output:
-        multiext("{prefix}", ".bed", ".bim", "fam")
+        multiext("{prefix}", ".bed", ".bim", ".fam")
     resources:
         cpus=128
     params:
@@ -60,15 +60,15 @@ rule plink2snpgds:
 
 rule mt2vcfshards:
     input:
-        mt="{prefix}.mt"
+        mt="{prefix}.mt",
+        vcf=ORIGINAL_VCF
     output:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
     resources:
         cpus=128
     params:
         hail_script=HAIL_WGS,
-        hail_cmd="convert-mt-to-vcf-shards",
-        pass_output=True
+        hail_cmd="convert-mt-to-vcf-shards"
     script: HAIL_WRAPPER
 
 rule build_vcf:
