@@ -1,6 +1,7 @@
 import subprocess
 import sysconfig, os, sys
 
+
 new_env_variables = {
     'HAIL_HOME': os.path.join(sysconfig.get_path("purelib"), "hail"),
     "SPARK_LOCAL_DIRS": "/local/tmp",
@@ -11,6 +12,8 @@ new_env_variables = {
 
 env = os.environ.copy()
 env.update(new_env_variables)
+
+hail_args_formatted = snakemake.params.hail_args.format_map(snakemake.__dict__)  # because params doesn't auto format
 
 hail_submit_script = \
 f"""ml spark/2.4.5 java
@@ -24,7 +27,7 @@ lsf-spark-submit.sh \
 --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
 --executor-memory {snakemake.resources.mem_mb - 4000}M \
 --driver-memory {snakemake.resources.mem_mb - 4000}M \
-{snakemake.params.hail_script} {snakemake.params.hail_args}"""
+{snakemake.params.hail_script} {hail_args_formatted}"""
 
 hail_process = subprocess.run(hail_submit_script, env=env, shell=True)
 sys.exit(hail_process.returncode)

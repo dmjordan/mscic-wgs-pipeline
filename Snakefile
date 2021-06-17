@@ -34,7 +34,7 @@ rule vcf2mt:
         cpus=128
     params:
         hail_script=HAIL_WGS,
-        hail_args=lambda wildcards, input, output: f"convert-vcf-to-mt {input.vcf} {output.mt}"
+        hail_args="convert-vcf-to-mt {input.vcf} {output.mt}"
     script: HAIL_WRAPPER
 
 rule mt2plink:
@@ -100,11 +100,16 @@ rule vcf2seqgds_single:
 
 rule qc:
     input:
-        mt=f"{COHORT_STEM}.mt"
+        mt=f"{COHORT_STEM}.mt",
+        covariates=COVARIATES_FILE
     output:
         mt=directory(f"{QC_STEM}.mt")
-    resources: hail=1
-    shell: "{HAIL_WGS} run-hail-qc {input.mt}"
+    resources:
+        cpus=128
+    params:
+        hail_script=HAIL_WGS,
+        hail_args="match-samples {input.mt} {input.covariates}"
+    script: HAIL_WRAPPER
 
 rule match_samples:
     input:
