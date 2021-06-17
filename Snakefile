@@ -30,7 +30,7 @@ rule vcf2mt:
     output:
         mt=directory(f"{COHORT_STEM}.mt")
     resources: hail=1
-    shell: f"{HAIL_WGS} convert-vcf-to-mt {input.vcf} {output.mt}"
+    shell: "{HAIL_WGS} convert-vcf-to-mt {input.vcf} {output.mt}"
 
 rule mt2plink:
     input:
