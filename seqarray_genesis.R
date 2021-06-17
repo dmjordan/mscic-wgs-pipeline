@@ -76,7 +76,7 @@ run_pcair <- function(gdsfile, out_prefix) {
     # Plot first 10 PCs
     pc_table <- as_tibble(pcair_result$vectors)
     pc_table %>% rename_all(~ str_replace(.x, 'V', 'PC')) %>% 
-                 add_column(Subject_ID=pcair_result$sample.id, before=1) -> pc_table
+                 add_column(Subject_ID=pcair_result$sample.id, .before=1) -> pc_table
     clinical_covariates <- readRDS("../../data/covariates/clinical_data_deidentified_allsamples/Biobank_clinical_data_table_by_blood_sample_deidentified_UNCONSENTED.RDS")
     clinical_covariates %>% group_by(Subject_ID) %>% 
                             summarise(Race_From_Consent=unique(Race_From_Consent),
@@ -94,7 +94,7 @@ run_pcair <- function(gdsfile, out_prefix) {
     }
 
     saveRDS(pcair_result, file=rdsfile)
-    write_delim(pc_table, path=txtfile)
+    pc_table %>% select(c(Subject_ID, starts_with("PC"))) %>% write_delim(path=txtfile)
     1
 }
 
