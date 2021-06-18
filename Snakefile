@@ -170,7 +170,7 @@ rule race_prediction:
     output:
         expand("{race}.indiv_list.txt", race=["WHITE", "BLACK", "HISPANIC", "ASIAN"]),
         table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.txt"
-    script: SCRIPTSDIR / "race_prediction.py"
+    script: str(SCRIPTSDIR / "race_prediction.py")
 
 
 rule split_races:
@@ -259,7 +259,7 @@ rule design_matrix:
     output:
         DESIGN_MATRIX
     script:
-        SCRIPTSDIR / "build_design_matrix.py"
+        str(SCRIPTSDIR / "build_design_matrix.py")
 
 rule null_model:
     input:
@@ -273,7 +273,7 @@ rule null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_null_model_exhaustive.R {output.rds} {wildcards.phenotype}"
+        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_null_model_exhaustive.R {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
         """
 
 rule run_gwas:
@@ -288,5 +288,5 @@ rule run_gwas:
     shell:
         """
         ml openmpi 
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_genesis_gwas.R {SAMPLE_MATCHED_STEM} {wildcards.phenotype}"
+        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_genesis_gwas.R {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
         """

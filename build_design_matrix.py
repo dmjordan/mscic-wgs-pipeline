@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use("agg")
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -205,8 +207,7 @@ def build_design_matrix(covariates_path, design_matrix_path):
     # batches.columns = "batch_" + batches.columns
     # batches.index = batches.index.str.split("T").str.get(0)
 
-    pca_table = pd.read_csv("625_Samples.cohort.QC_filtered.sample_matched.PCAir.txt", delim_whitespace=True)
-    pca_table.index = pca_table.index.str.split("T").str.get(0)
+    pca_table = pd.read_csv("625_Samples.cohort.QC_filtered.sample_matched.PCAir.txt", delim_whitespace=True, index_col="Subject_ID")
     pca_table.columns = [f"pc{i}" for i in range(1, len(pca_table.columns) + 1)]
     pca_table = pca_table.iloc[:, :10]
 
@@ -216,5 +217,5 @@ def build_design_matrix(covariates_path, design_matrix_path):
     return {'phenotypes': all_phenotypes}
 
 
- if __name__ == "__main__":
-     build_design_matrix(snakemake.output[0], snakemake.input[0])
+if __name__ == "__main__":
+    build_design_matrix(snakemake.input[0], snakemake.output[0])
