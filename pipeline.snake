@@ -11,11 +11,6 @@ SAMPLE_MATCHED_STEM = QC_STEM + ".sample_matched"
 GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
 
-SCRIPTSDIR = Path('../../scripts/WGS/').resolve()
-HAIL_WGS = str(SCRIPTSDIR / "hail_wgs.py")
-HAIL_WRAPPER = str(SCRIPTSDIR / "lsf_hail_wrapper.py")
-SEQARRAY_GENESIS = str(SCRIPTSDIR / "seqarray_genesis.R")
-
 TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod", "max_who",
         "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
@@ -23,32 +18,32 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity
 rule gwas_traits_of_interest:
     input: expand("{phenotype}.GENESIS.assoc.txt", phenotype=TRAITS_OF_INTEREST)
 
+
+# utility base tasks
+
+rule hail_base:
+    resources:
+        cpus=128
+    script: config.hail_wrapper
+
 # format conversions
 
-rule vcf2mt:
+use rule hail_base as vcf2mt with:
     input:
         vcf=ORIGINAL_VCF
     output:
         mt=directory(f"{COHORT_STEM}.mt")
-    resources: 
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         pass_output=True,
         hail_cmd="convert-vcf-to-mt"
-    script: HAIL_WRAPPER
 
-rule mt2plink:
+use rule hail_base as mt2plink with:
     input:
         mt="{prefix}.mt"
     output:
         multiext("{prefix}", ".bed", ".bim", ".fam")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="convert-mt-to-plink"
-    script: HAIL_WRAPPER
 
 rule plink2snpgds:
     input:
@@ -57,18 +52,14 @@ rule plink2snpgds:
         gds="{prefix}.snp.gds"
     shell: "Rscript {SEQARRAY_GENESIS} plink2snpgds {wildcards.prefix}"
 
-rule mt2vcfshards:
+use rule hail_base as mt2vcfshards with:
     input:
         mt="{prefix}.mt",
         vcf=ORIGINAL_VCF
     output:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="convert-mt-to-vcf-shards"
-    script: HAIL_WRAPPER
 
 rule build_vcf:
     input:
@@ -91,10 +82,12 @@ rule vcf2seqgds_shards:
     resources:
         mem_mb=16000,
         cpus=128
+    params:
+        script_path=workflow.source_path("mpi_vcf2gds.R")
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_vcf2gds.R {input.shards_dir}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {input.shards_dir}
         """
 
 rule vcf2seqgds_single:
@@ -105,34 +98,28 @@ rule vcf2seqgds_single:
     resources:
         cpus=48,
         single_host=1
-    shell: "Rscript {SCRIPTSDIR}/seqvcf2gds.R {input.shards_dir} {output.gds}"
+    params:
+        script_path=workflow.source_path("seqvcf2gds.R")
+    shell: "Rscript {params.script_path} {input.shards_dir} {output.gds}"
 
 # qc steps
 
-rule qc:
+use rule hail_base as qc with:
     input:
         mt=f"{COHORT_STEM}.mt"
     output:
         mt=directory(f"{QC_STEM}.mt")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="run-hail-qc"
-    script: HAIL_WRAPPER
 
-rule match_samples:
+use rule hail_base as match_samples with:
     input:
         covariates = COVARIATES_FILE,
         mt = f"{QC_STEM}.mt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.mt")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="match-samples"
-    script: HAIL_WRAPPER
 
 # race and ancestry steps
 
@@ -170,58 +157,46 @@ rule race_prediction:
     output:
         expand("{race}.indiv_list.txt", race=["WHITE", "BLACK", "HISPANIC", "ASIAN"]),
         table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.txt"
-    script: SCRIPTSDIR / "race_prediction.py"
+    script: "race_prediction.py"
 
 
-rule split_races:
+use rule hail_base as split_races with:
     input:
         indiv_list="{race}.indiv_list.txt",
         mt=f"{SAMPLE_MATCHED_STEM}.mt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.mt")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="subset-mt-samples",
         pass_output=True
-    script: HAIL_WRAPPER
 
 rule pcrelate:
     input:
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.RDS",
         gds=f"{LD_STEM}.snp.gds"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
-    shell: "Rscript {SEQARRAY_GENESIS} pcrelate {SAMPLE_MATCHED_STEM}"
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+    shell: "Rscript {config.genesis_task_script} pcrelate {SAMPLE_MATCHED_STEM}"
 
 # variant subsets
 
-rule gwas_filter:
+use rule hail_base as gwas_filter with:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.GWAS_filtered.mt")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="gwas-filter"
-    script: HAIL_WRAPPER
 
-rule rare_filter:
+use rule hail_base as rare_filter with:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.rare_filtered.mt")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="rare-filter"
-    script: HAIL_WRAPPER
 
-rule exome_filter:
+use rule hail_base as exome_filter with:
     input:
         mt="{prefix}.mt",
         bed=EXOME_BED
@@ -231,22 +206,16 @@ rule exome_filter:
         cpus=128,
         mem_mb=12000
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="restrict-to-bed",
         pass_output=True
-    script: HAIL_WRAPPER
 
-rule prune_ld:
+use rule hail_base as prune_ld with:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.LD_pruned.mt")
-    resources:
-        cpus=128
     params:
-        hail_script=HAIL_WGS,
         hail_cmd="ld-prune"
-    script: HAIL_WRAPPER
 
 # association tests
 
@@ -259,7 +228,7 @@ rule design_matrix:
     output:
         DESIGN_MATRIX
     script:
-        SCRIPTSDIR / "build_design_matrix.py"
+        "build_design_matrix.py"
 
 rule null_model:
     input:
@@ -270,10 +239,12 @@ rule null_model:
     resources:
         cpus=128,
         mem_mb=16000
+    params:
+        script_path=workflow.source_path("mpi_null_model_exhaustive.R")
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_null_model_exhaustive.R {output.rds} {wildcards.phenotype}"
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {output.rds} {wildcards.phenotype}"
         """
 
 rule run_gwas:
@@ -285,8 +256,10 @@ rule run_gwas:
     resources:
         mem_mb=16000,
         cpus=128
+    params:
+        script_path=workflow.source_path("mpi_genesis_gwas.R")
     shell:
         """
         ml openmpi 
-        mpirun --mca mpi_warn_on_fork 0 Rscript {SCRIPTSDIR}/mpi_genesis_gwas.R {SAMPLE_MATCHED_STEM} {wildcards.phenotype}"
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}"
         """

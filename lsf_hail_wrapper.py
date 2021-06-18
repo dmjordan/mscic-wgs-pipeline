@@ -1,6 +1,11 @@
 import subprocess
 import sysconfig, os, sys
+import typing
 
+# declaring the snakemake object so my IDE stops yelling at me
+if typing.TYPE_CHECKING:
+    from snakemake.script import Snakemake
+    snakemake: Snakemake
 
 new_env_variables = {
     'HAIL_HOME': os.path.join(sysconfig.get_path("purelib"), "hail"),
@@ -18,7 +23,9 @@ if snakemake.params.get("pass_output", False):
     hail_args += list(snakemake.output)
 hail_args_formatted = " ".join(hail_args)
 
-hail_submit_script = \
+hail_script_path = os.path.join(snakemake.scriptdir, snakemake.config.hail_task_script)
+
+spark_submit_script = \
 f"""ml spark/2.4.5 java
 ml -python
 lsf-spark-submit.sh \
@@ -30,7 +37,7 @@ lsf-spark-submit.sh \
 --conf spark.kryo.registrator=is.hail.kryo.HailKryoRegistrator \
 --executor-memory {snakemake.resources.mem_mb - 4000}M \
 --driver-memory {snakemake.resources.mem_mb - 4000}M \
-{snakemake.params.hail_script} {snakemake.params.hail_cmd} {hail_args_formatted}"""
+{hail_script_path} {snakemake.params.hail_cmd} {hail_args_formatted}"""
 
-hail_process = subprocess.run(hail_submit_script, env=env, shell=True)
+hail_process = subprocess.run(spark_submit_script, env=env, shell=True)
 sys.exit(hail_process.returncode)

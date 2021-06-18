@@ -3,6 +3,12 @@ import numpy as np
 from scipy import stats
 import seaborn as sns
 import matplotlib.pyplot as plt
+import typing
+
+# declaring the snakemake object so my IDE stops yelling at me
+if typing.TYPE_CHECKING:
+    from snakemake.script import Snakemake
+    snakemake: Snakemake
 
 binary_phenotypes = ["ever_covid", "covid_encounter", "ever_icu", "deceased", "recovered", "discharged",
                      "recovered_not_deceased", "deceased_vs_recovered", "deceased_vs_discharged",
@@ -216,5 +222,5 @@ def build_design_matrix(covariates_path, design_matrix_path):
     return {'phenotypes': all_phenotypes}
 
 
- if __name__ == "__main__":
-     build_design_matrix(snakemake.output[0], snakemake.input[0])
+if __name__ == "__main__":
+    build_design_matrix(snakemake.output[0], snakemake.input[0])
