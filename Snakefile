@@ -51,7 +51,7 @@ rule plink2snpgds:
     output:
         gds="{prefix}.snp.gds"
     params:
-        genesis_cmd: "plink2snpgds"
+        genesis_cmd="plink2snpgds"
     script: config.genesis_task_script
 
 use rule hail_base as mt2vcfshards with:

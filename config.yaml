@@ -2,6 +2,7 @@ cluster: "snakemake_bsub_wrapper.py"
 cluster-status: "cluster_status.py"
 jobs: 1000
 local-cores: 48
+directory: "/sc/arion/projects/mscic1/files/WGS/"
 default-resources:
     - mem_mb=8000
     - time_min=720
