@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use("agg")
 import pandas as pd
 import numpy as np
 import logging

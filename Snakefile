@@ -159,7 +159,7 @@ rule race_prediction:
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt"
     output:
         expand("{race}.indiv_list.txt", race=["WHITE", "BLACK", "HISPANIC", "ASIAN"]),
-        table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.txt"
+        table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.csv"
     script: os.path.join(config["scriptsdir"], "race_prediction.py")
 
 
