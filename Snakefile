@@ -24,7 +24,7 @@ rule gwas_traits_of_interest:
 rule hail_base:
     resources:
         cpus=128
-    script: config.hail_wrapper
+    script: config["hail_wrapper"]
 
 # format conversions
 
@@ -52,7 +52,7 @@ rule plink2snpgds:
         gds="{prefix}.snp.gds"
     params:
         genesis_cmd="plink2snpgds"
-    script: config.genesis_task_script
+    script: config["genesis_task_script"]
 
 use rule hail_base as mt2vcfshards with:
     input:
@@ -144,7 +144,7 @@ rule pcair:
     params:
         output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
         genesis_cmd="pcair"
-    script: config.genesis_task_script
+    script: config["genesis_task_script"]
 
 use rule pcair as pcair_race with:
    input:
@@ -182,7 +182,7 @@ rule pcrelate:
     params:
         genesis_cmd="pcrelate",
         prefix=SAMPLE_MATCHED_STEM
-    script: config.genesis_task_script
+    script: config["genesis_task_script"]
 
 # variant subsets
 
