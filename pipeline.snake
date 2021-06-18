@@ -50,7 +50,9 @@ rule plink2snpgds:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     output:
         gds="{prefix}.snp.gds"
-    shell: "Rscript {SEQARRAY_GENESIS} plink2snpgds {wildcards.prefix}"
+    params:
+        genesis_cmd: "plink2snpgds"
+    script: config.genesis_task_script
 
 use rule hail_base as mt2vcfshards with:
     input:
@@ -100,7 +102,7 @@ rule vcf2seqgds_single:
         single_host=1
     params:
         script_path=workflow.source_path("seqvcf2gds.R")
-    shell: "Rscript {params.script_path} {input.shards_dir} {output.gds}"
+    script: "seqvcf2gds.R"
 
 # qc steps
 
@@ -139,9 +141,10 @@ rule pcair:
         king=f"{SAMPLE_MATCHED_STEM}.kin0"
     output:
         multiext(f"{SAMPLE_MATCHED_STEM}.PCAir", ".RDS", ".txt")
-    params: output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem
-    shell: "Rscript {SEQARRAY_GENESIS} pcair {input.gds} {params.output_stem}"
-
+    params:
+        output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
+        genesis_cmd="pcair"
+    script: config.genesis_task_script
 
 use rule pcair as pcair_race with:
    input:
@@ -176,7 +179,10 @@ rule pcrelate:
         gds=f"{LD_STEM}.snp.gds"
     output:
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
-    shell: "Rscript {config.genesis_task_script} pcrelate {SAMPLE_MATCHED_STEM}"
+    params:
+        genesis_cmd="pcrelate",
+        prefix=SAMPLE_MATCHED_STEM
+    script: config.genesis_task_script
 
 # variant subsets
 

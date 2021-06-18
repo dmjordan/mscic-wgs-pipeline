@@ -337,10 +337,9 @@ make_isoform_tpms_table <- function (infile, outfile) {
     1
 }
 
-args <- commandArgs(trailingOnly=TRUE)
 switch(
-    args[[1]],
-    plink2snpgds=build_snp_gds(args[[2]]),
-    pcair=run_pcair(args[[2]], args[[3]]),
-    pcrelate=run_pcrelate(args[[2]])
+    snakemake@params[["genesis_cmd"]],
+    plink2snpgds=build_snp_gds(snakemake@wildcards[["prefix"]]),
+    pcair=run_pcair(snakemake@input[["gds"]], snakemake@params[["output_stem"]]),
+    pcrelate=run_pcrelate(snakemake@params[["prefix"]])
 )

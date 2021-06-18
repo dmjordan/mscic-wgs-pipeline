@@ -20,9 +20,14 @@ if (length(hosts) > 1) {
 }
 
 # read in arguments
-args <- commandArgs(trailingOnly=TRUE)
-vcfShardsDir <- args[[1]]
-gdsFile <- args[[2]]
+if (exists("snakemake")) {
+    vcfShardsDir <- snakemake@input[["shards_dir"]]
+    gdsFile <- snakemake@output[["gds"]]
+} else {
+    args <- commandArgs(trailingOnly=TRUE)
+    vcfShardsDir <- args[[1]]
+    gdsFile <- args[[2]]
+}
 
 # do the conversion
 vcfFiles <- list.files(vcfShardsDir, "part-[0-9]{5}\\.bgz$", full.names=TRUE)
