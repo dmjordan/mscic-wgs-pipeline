@@ -1,6 +1,5 @@
 cluster: "snakemake_bsub_wrapper.py"
 cluster-status: "cluster_status.py"
-snakefile: "pipeline.snake"
 jobs: 1000
 local-cores: 48
 default-resources:
