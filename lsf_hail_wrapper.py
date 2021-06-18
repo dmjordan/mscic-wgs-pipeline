@@ -23,7 +23,7 @@ if snakemake.params.get("pass_output", False):
     hail_args += list(snakemake.output)
 hail_args_formatted = " ".join(hail_args)
 
-hail_script_path = os.path.join(snakemake.scriptdir, snakemake.config["hail_task_script"])
+hail_script_path = os.path.join(config["scriptsdir"], "hail_wgs.py")
 
 spark_submit_script = \
 f"""ml spark/2.4.5 java

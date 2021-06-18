@@ -2,7 +2,6 @@ cluster: "snakemake_bsub_wrapper.py"
 cluster-status: "cluster_status.py"
 jobs: 1000
 local-cores: 48
-directory: "/sc/arion/projects/mscic1/files/WGS/"
 default-resources:
     - mem_mb=8000
     - time_min=720
@@ -10,6 +9,4 @@ default-resources:
     - queue="premium"
     - project="mscic"
 config:
-    - hail_task_script="hail_wgs.py"
-    - genesis_task_script="seqarray_genesis.R"
-    - hail_wrapper="lsf_hail_wrapper.py"
+    - scriptsdir="/sc/arion/projects/mscic1/scripts/WGS"

@@ -15,6 +15,7 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity
         "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
+
 rule gwas_traits_of_interest:
     input: expand("{phenotype}.GENESIS.assoc.txt", phenotype=TRAITS_OF_INTEREST)
 
@@ -24,7 +25,10 @@ rule gwas_traits_of_interest:
 rule hail_base:
     resources:
         cpus=128
-    script: config["hail_wrapper"]
+    script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py") 
+
+rule genesis_base:
+    script: os.path.join(config["scriptsdir"], "seqarray_genesis.R")
 
 # format conversions
 
@@ -45,14 +49,13 @@ use rule hail_base as mt2plink with:
     params:
         hail_cmd="convert-mt-to-plink"
 
-rule plink2snpgds:
+use rule genesis_base as plink2snpgds with:
     input:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     output:
         gds="{prefix}.snp.gds"
     params:
         genesis_cmd="plink2snpgds"
-    script: config["genesis_task_script"]
 
 use rule hail_base as mt2vcfshards with:
     input:
@@ -85,7 +88,7 @@ rule vcf2seqgds_shards:
         mem_mb=16000,
         cpus=128
     params:
-        script_path=workflow.source_path("mpi_vcf2gds.R")
+        script_path=os.path.join(config["scriptsdir"], "mpi_vcf2gds.R")
     shell:
         """
         ml openmpi
@@ -100,9 +103,7 @@ rule vcf2seqgds_single:
     resources:
         cpus=48,
         single_host=1
-    params:
-        script_path=workflow.source_path("seqvcf2gds.R")
-    script: "seqvcf2gds.R"
+    script: os.path.join(config["scriptsdir"], "seqvcf2gds.R")
 
 # qc steps
 
@@ -135,7 +136,7 @@ rule king:
         single_host=1
     shell: "ml king && king -b {input[0]} --kinship --cpus {threads} --prefix {wildcards.prefix}"
 
-rule pcair:
+use rule genesis_base as pcair with:
     input:
         gds=f"{LD_STEM}.snp.gds",
         king=f"{SAMPLE_MATCHED_STEM}.kin0"
@@ -144,7 +145,6 @@ rule pcair:
     params:
         output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
         genesis_cmd="pcair"
-    script: config["genesis_task_script"]
 
 use rule pcair as pcair_race with:
    input:
@@ -160,7 +160,7 @@ rule race_prediction:
     output:
         expand("{race}.indiv_list.txt", race=["WHITE", "BLACK", "HISPANIC", "ASIAN"]),
         table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.txt"
-    script: "race_prediction.py"
+    script: os.path.join(config["scriptsdir"], "race_prediction.py")
 
 
 use rule hail_base as split_races with:
@@ -173,7 +173,7 @@ use rule hail_base as split_races with:
         hail_cmd="subset-mt-samples",
         pass_output=True
 
-rule pcrelate:
+use rule genesis_base as pcrelate with:
     input:
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.RDS",
         gds=f"{LD_STEM}.snp.gds"
@@ -182,7 +182,6 @@ rule pcrelate:
     params:
         genesis_cmd="pcrelate",
         prefix=SAMPLE_MATCHED_STEM
-    script: config["genesis_task_script"]
 
 # variant subsets
 
@@ -234,7 +233,7 @@ rule design_matrix:
     output:
         DESIGN_MATRIX
     script:
-        "build_design_matrix.py"
+        os.path.join(config["scriptsdir"], "build_design_matrix.py")
 
 rule null_model:
     input:
@@ -246,26 +245,18 @@ rule null_model:
         cpus=128,
         mem_mb=16000
     params:
-        script_path=workflow.source_path("mpi_null_model_exhaustive.R")
+        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
     shell:
         """
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
         """
 
-rule run_gwas:
+use rule null_model as run_gwas with: 
     input:
         gds=f"{GWAS_STEM}.shards.seq.gds",
         null_nodel=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
         txt="{phenotype}.GENESIS.assoc.txt"
-    resources:
-        mem_mb=16000,
-        cpus=128
     params:
-        script_path=workflow.source_path("mpi_genesis_gwas.R")
-    shell:
-        """
-        ml openmpi 
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
-        """
+        script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
