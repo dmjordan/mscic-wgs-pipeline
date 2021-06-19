@@ -69,9 +69,12 @@ qc_path = mt_path.with_suffix(".QC_filtered.mt")
 sample_matched_path = qc_path.with_suffix(".sample_matched.mt")
 vep_path = sample_matched_path.with_suffix(".VEP.mt")
 lof_filtered_path = vep_path.with_suffix(".LOF_filtered.mt")
+functional_filtered_path = vep_path.with_suffix(".functional_filtered.mt")
 pext_filtered_path = vep_path.with_suffix(".pext_annotated.pext_filtered.mt")
+lof_pext_filtered_path = vep_path.with_suffix('.pext_annotated.pext_LOF_filtered.mt')
 gwas_filtered_path = sample_matched_path.with_suffix(".GWAS_filtered.mt")
 rare_filtered_path = sample_matched_path.with_suffix(".rare_filtered.mt")
+rare_pext_filtered_path = pext_filtered_path.with_suffix(".rare_filtered.mt")
 exome_filtered_path = sample_matched_path.with_suffix(".exome_filtered.mt")
 ld_pruned_path = gwas_filtered_path.with_suffix(".LD_pruned.mt")
 white_only_path = sample_matched_path.with_suffix(".WHITE_only.mt")
@@ -101,9 +104,12 @@ hispanic_ld_path = ld_pruned_path.with_suffix(".HISPANIC_only.mt")
 
 vcf_endpoints = {"full": sample_matched_path,
                  "lof": lof_filtered_path,
+                 "functional": functional_filtered_path,
                  "pext": pext_filtered_path,
                  "gwas": gwas_filtered_path,
                  "rare": rare_filtered_path,
+                 "rare_pext": rare_pext_filtered_path,
+                 "lof_pext": lof_pext_filtered_path,
                  "exome": exome_filtered_path,
                  "ld": ld_pruned_path,
                  "white_full": white_only_path,
@@ -446,7 +452,8 @@ def task_rare_filter():
                                ("white", white_only_path),
                                ("black", black_only_path),
                                ("hispanic", hispanic_only_path),
-                               ("asian", asian_only_path)]:
+                               ("asian", asian_only_path),
+                               ("pext", pext_filtered_path)]:
         yield {
             "name": subset,
             "actions": [f"{scriptsdir / 'hail_wgs.py'} rare-filter {input_path}"],
@@ -781,6 +788,15 @@ def task_lof_filter():
     }
 
 
+@bsub_hail(cpus=128)
+def task_functional_filter():
+    return {
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-functional-variation {vep_path}"],
+        "file_dep": [vep_path],
+        "targets": [functional_filtered_path],
+        "clean": [clean_dir_targets]
+    }
+
 @bsub(cpus=64)
 def task_vcf2seqgds_single():
     for name, mtfile in vcf_endpoints.items():
@@ -840,16 +856,22 @@ def task_filter_pext():
         "clean": [clean_dir_targets]
     }
 
+
+@bsub_hail(cpus=128)
+def task_filter_lof_pext():
+    pext_input_path = vep_path.with_suffix(".pext_annotated.mt")
+    return {
+        "actions": [f"{scriptsdir / 'hail_wgs.py'} filter-hi-pext-lof {pext_input_path}"],
+        "file_dep": [pext_input_path],
+        "targets": [pext_input_path.with_suffix(".pext_LOF_filtered.mt")],
+        "clean": [clean_dir_targets]
+    }
+
 @bsub(cpus=128, mem_gb=16)
 def task_run_smmat():
-    for filter in "lof", "rare", "pext":
+    for filter in "lof", "rare", "pext", "rare_pext", "lof_pext", "functional":
+        mtfile = vcf_endpoints[filter]
         for phenotype in get_phenotypes_list():
-            if filter == "lof":
-                mtfile = lof_filtered_path
-            elif filter == "pext":
-                mtfile = pext_filtered_path
-            else:
-                mtfile = rare_filtered_path
             yield {
                 "name": f"{phenotype}_{filter}",
                 "actions": [f"ml openmpi && mpirun --mca mpi_warn_on_fork 0 Rscript {scriptsdir / 'mpi_genesis_smmat.R'} {mtfile.with_suffix('.seq.gds')} "
