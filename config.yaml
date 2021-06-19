@@ -10,3 +10,4 @@ default-resources:
     - project="mscic"
 config:
     - scriptsdir="/sc/arion/projects/mscic1/scripts/WGS"
+    - resourcesdir="/sc/arion/projects/mscic1/resources"

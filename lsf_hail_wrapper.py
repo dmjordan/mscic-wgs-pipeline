@@ -21,6 +21,7 @@ env.update(new_env_variables)
 hail_args = list(snakemake.input)
 if snakemake.params.get("pass_output", False):
     hail_args += list(snakemake.output)
+hail_args.append(snakemake.params.get("hail_extra_args", ""))
 hail_args_formatted = " ".join(hail_args)
 
 hail_script_path = os.path.join(snakemake.config["scriptsdir"], "hail_wgs.py")

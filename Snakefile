@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 ORIGINAL_VCF = Path('/sc/arion/projects/mscic1/techdev.incoming/DNA/all_625_samples_cohort_vcf/625_Samples.cohort.vcf.gz')
@@ -185,6 +186,13 @@ use rule genesis_base as pcrelate with:
 
 # variant subsets
 
+subset_tags = {
+    "GWAS_filtered": "gwas",
+    "rare_filtered": "rare",
+    "exome_filtered": "exome",
+    "VEP.LOF_filtered": "lof"
+}
+
 use rule hail_base as gwas_filter with:
     input:
         mt="{prefix}.mt"
@@ -221,6 +229,25 @@ use rule hail_base as prune_ld with:
         mt=directory("{prefix}.LD_pruned.mt")
     params:
         hail_cmd="ld-prune"
+
+use rule hail_base as lof_filter with:
+    input:
+        mt=f"{SAMPLE_MATCHED_STEM}.VEP.mt"
+    output:
+        mt=directory(f"{SAMPLE_MATCHED_STEM}.VEP.LOF_filtered.mt")
+    params:
+        hail_cmd="filter-lof-hc"
+
+use rule hail_base as chrom_split with:
+    input:
+        mt="{prefix}.mt"
+    output:
+        mt=directory("{prefix}.{chrom}.mt")
+    params:
+        hail_cmd="split-chromosomes",
+        hail_extra_args="{wildcards.chrom}"
+
+
 
 # association tests
 
@@ -260,3 +287,184 @@ use rule null_model as run_gwas with:
         txt="{phenotype}.GENESIS.assoc.txt"
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
+
+use rule genesis_base as gwas_plots with:
+    input:
+        "{phenotype}.GENESIS.assoc.txt"
+    output:
+        "{phenotype}.GENESIS.qq.png",
+        "{phenotype}.GENESIS.manhattan.png"
+    params:
+        genesis_cmd="gwas_plots"
+
+rule run_smmat:
+    input:
+        lambda wildcards: [f"{SAMPLE_MATCHED_STEM}.{subset_tags[wildcards.subset]}.seq.gds",
+                           f"{SAMPLE_MATCHED_STEM}.{wildcards.phenotype}.null.RDS"]
+    output:
+        multiext("{phenotype}.{subset}.GENESIS.SMMAT", ".assoc.txt", ".manhattan.png", ".qq.png")
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_genesis_smmat.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.filter}
+        """
+
+# variant annotation tasks
+
+use rule hail_base as vep with:
+    input:
+        f"{SAMPLE_MATCHED_STEM}.mt",
+        "vep/vep_config_script.json"
+    output:
+        directory(f"{SAMPLE_MATCHED_STEM}.VEP.mt")
+    params:
+        hail_cmd="run-vep"
+
+# downstream analyses
+
+# LD Score Regression
+
+rule ld_scores:
+    input:
+        multiext(f"{GWAS_STEM}.{{chrom}}", ".bed", ".bim", ".fam")
+    output:
+        multiext(f"{GWAS_STEM}.ld_chr/{{chrom}}.l2", ".M", ".M_5_50", ".ldscore.gz")
+    shell:
+        """ml ldsc
+        mkdir -p {GWAS_STEM}.ld_chr
+        ldsc.py --bfile {GWAS_STEM}.{wildcards.chrom} \
+        -l2 --ld-wind-kb 1000 --out {GWAS_STEM}/{wildcards.chrom}"""
+
+rule munge_sumstats:
+    input:
+        assoc="{phenotype}.GENESIS.assoc.txt"
+    output:
+        sumstats="{phenotype}.GENESIS.assoc.sumstats.gz"
+    shell:
+        """ml ldsc
+        munge_sumstats.py --sumstats {input.assoc} \
+                          --out {output.sumstats} \
+                          --snp variant.id --N-col n.obs --frq freq \
+                          --a1 effect.allele --a2 other.allele \
+                          --p Score.pval --signed-sumstats Est,0
+        """
+
+rule ldsc:
+    input:
+        "{phenotype_1}.GENESIS.assoc.sumstats.gz",
+        "{phenotype_2}.GENESIS.assoc.sumstats.gz",
+        expand(f"{GWAS_STEM}.ld_chr/{{chrom}}.l2.ldscore.gz", chrom=[f"chr{i}" for i in range(1,23)] + ["chrX"])
+    output:
+        "{phenotype_1}.{phenotype_2}.assoc.rg.log",
+    resources:
+        mem_mb=16000
+    shell:
+        """
+        ml ldsc
+        ldsc.py --rg {output[1]},{output[2]} \ 
+                --ref-ld-chr {GWAS_STEM}.ld_chr/ \
+                --w-ld-chr {GWAS_STEM}.ld_chr/ \
+                --out {wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg"
+        """
+
+# MetaXcan
+
+GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
+MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
+ALL_MASHR_MODELS = [model.with_suffix("").name for model in MASHR_MODELS_DIR.glob("*.db")]
+
+rule metaxcan_harmonize:
+    input:
+        assoc="{phenotype}.GENESIS.assoc.txt"
+    output:
+        harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt"
+    params:
+        script_path=os.path.join(config["scriptsdir"], "summary-gwas-imputation", "src", "gwas_parsing.py"),
+        metadata_file=os.path.join(config["resourcesdir"], "metaxcan_data", "reference_panel_1000G", "variant_metadata.txt.gz")
+    shell:
+        """python {params.script_path} \
+            -separator ' '  \
+            -gwas_file {input.assoc}  \
+            -snp_reference_metadata {params.metadata_file} METADATA  \
+            -output_column_map variant.id variant_id  \
+            -output_column_map other.allele non_effect_allele  \
+            -output_column_map effect.allele effect_allele  \
+            -output_column_map Est effect_size  \
+            -output_column_map Est.SE standard_error  \
+            -output_column_map Score.pval pvalue  \
+            -output_column_map chr chromosome --chromosome_format  \
+            -output_column_map pos position  \
+            -output_column_map n.obs sample_size  \
+            -output_column_map freq frequency  \
+            -output_order variant_id panel_variant_id chromosome position effect_allele non_effect_allele frequency pvalue zscore effect_size standard_error sample_size  \
+            -output {output.harmonized}
+        """
+
+rule spredixcan:
+    input:
+        harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt",
+        model= MASHR_MODELS_DIR / "{model}.db",
+        covar = MASHR_MODELS_DIR / "{model}.txt.gz"
+    output:
+        predixcan="spredixcan_results/{phenotype}.{model}.csv"
+    params:
+        script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SPrediXcan.py")
+    shell:
+        """mkdir -p spredixcan_results
+        python {params.script_path}  \
+                --gwas_file {input.harmonized}  \
+                --snp_column panel_variant_id  \
+                --chromosome_column chromosome  \
+                --position_column position  \
+                --effect_allele_column effect_allele  \
+                --non_effect_allele_column non_effect_allele  \
+                --beta_column effect_size  \
+                --se_column standard_error  \
+                --pvalue_column pvalue  \
+                --model_db_snp_key varID  \
+                --keep_non_rsid  \
+                --additional_output  \
+                --overwrite  \
+                --throw  \
+                --model_db_path {input.model}  \
+                --covariance {input.covar}  \
+                --output_file {output.predixcan}
+        """
+
+rule s_multixcan:
+    input:
+        expand("spredixcan_results/{phenotype}.{model}.csv", model=ALL_MASHR_MODELS, allow_missing=True),
+        harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt",
+        covar=GTEX_MODELS_DIR / "gtex_v8_expression_mashr_snp_smultixcan_covariance.txt.gz"
+    output:
+        multixcan="spredixcan_results/{phenotype}.smultixcan.txt"
+    params:
+        script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SMulTiXcan.py")
+    shell:
+        """python {params.script_path}  \
+                --models_folder {MASHR_MODELS_DIR}  \
+                '--models_name_pattern "mashr_(.*).db" '
+                --snp_covariance {input.covar}  \
+                --metaxcan_folder {spredixcan_results}  \
+                f'--metaxcan_filter "{wildcards.phenotype}.mashr_(.*).csv" '
+                '--metaxcan_file_name_parse_pattern "(.*).mashr_(.*).csv" '
+                --gwas_file {input.harmonized}  \
+                --snp_column panel_variant_id  \
+                --chromosome_column chromosome  \
+                --position_column position  \
+                --effect_allele_column effect_allele  \
+                --non_effect_allele_column non_effect_allele  \
+                --beta_column effect_size  \
+                --se_column standard_error  \
+                --pvalue_column pvalue  \
+                --model_db_snp_key varID  \
+                --keep_non_rsid  \
+                --cutoff_condition_number 30  \
+                --throw  \
+                --output {output.multixcan} \
+        """

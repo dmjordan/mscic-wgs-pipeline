@@ -246,14 +246,14 @@ cli.add_command(click.Command("filter-lof-hc", None, filter_lof_hc,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
-def split_chromosomes(mt_path):
+def split_chromosomes(mt_path, chrom):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
-    for chrom in [f"chr{i}" for i in range(1,23)] + ["chrX"]:
-        mt_filtered = mt.filter_rows(mt.locus.contig == chrom)
-        mt_filtered.write(str(mt_path.with_suffix(f".{chrom}.mt")), overwrite=True)
+    mt_filtered = mt.filter_rows(mt.locus.contig == chrom)
+    mt_filtered.write(str(mt_path.with_suffix(f".{chrom}.mt")), overwrite=True)
 cli.add_command(click.Command("split-chromosomes", None, split_chromosomes,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
+                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
+                               click.Argument(["chrom"], type=str)]))
 
 
 def restrict_to_bed(mt_path, bed_path, out_mt_path):
