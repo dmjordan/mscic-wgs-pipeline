@@ -190,7 +190,8 @@ subset_tags = {
     "GWAS_filtered": "gwas",
     "rare_filtered": "rare",
     "exome_filtered": "exome",
-    "VEP.LOF_filtered": "lof"
+    "VEP.LOF_filtered": "lof",
+    "VEP.pext_annotated.pext_filtered": "pext"
 }
 
 use rule hail_base as gwas_filter with:
@@ -237,6 +238,14 @@ use rule hail_base as lof_filter with:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.VEP.LOF_filtered.mt")
     params:
         hail_cmd="filter-lof-hc"
+
+use rule hail_base as pext_filter with:
+    input:
+        mt=f"{SAMPLE_MATCHED_STEM}.VEP.pext_annotated.mt"
+    output:
+        mt=f"{SAMPLE_MATCHED_STEM}.VEP.pext_annotated.pext_filtered.mt"
+    params:
+        hail_cmd="filter-hi-pext"
 
 use rule hail_base as chrom_split with:
     input:
@@ -324,6 +333,37 @@ use rule hail_base as vep with:
         directory(f"{SAMPLE_MATCHED_STEM}.VEP.mt")
     params:
         hail_cmd="run-vep"
+
+
+use rule genesis_base as isoform_expression_tsv with:
+    input:
+        "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/RNASeq_SummarizedExperiment/SummarizedExperiment_Kallisto_Transcripts_RNA_Samples.RDS"
+    output:
+        "transcript_isoform_tpm_table.tsv"
+    params:
+        genesis_cmd="isoform_table"
+
+use rule hail_base as isoform_expression_ht with:
+    input:
+        "transcript_isoform_tpm_table.tsv"
+    output:
+        "tx_annot.tx_summary.ht",
+        "tx_annot.gene_maximums.ht"
+    params:
+        hail_cmd="transform-tpm-table",
+        pass_output=True
+
+use rule hail_base as annotate_pext with:
+    input:
+        f"{SAMPLE_MATCHED_STEM}.VEP.mt",
+        "tx_annot.tx_summary.ht",
+        "tx_annot.gene_maximums.ht"
+    output:
+        f"{SAMPLE_MATCHED_STEM}.VEP.pext_annotated.mt"
+    params:
+        hail_cmd="annotate-pext"
+
+
 
 # downstream analyses
 
