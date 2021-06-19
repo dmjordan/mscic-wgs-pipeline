@@ -165,8 +165,8 @@ rule race_prediction:
 
 use rule hail_base as split_races with:
     input:
-        indiv_list="{race}.indiv_list.txt",
-        mt=f"{SAMPLE_MATCHED_STEM}.mt"
+        mt=f"{SAMPLE_MATCHED_STEM}.mt",
+        indiv_list="{race}.indiv_list.txt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.mt")
     params:
