@@ -281,7 +281,7 @@ def annotate_pext(mt_path, tx_summary_ht_path, gene_maximums_ht_path):
     tx_summary_ht = hl.read_table(str(tx_summary_ht_path))
     mt = tx_annotation.tx_annotate_mt(mt, tx_summary_ht, gene_maximums_ht_path)
     mt.write(str(mt_path.with_suffix(".pext_annotated.mt")))
-cli.add_command(click.Command("annotate_pext", None, annotate_pext,
+cli.add_command(click.Command("annotate-pext", None, annotate_pext,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["tx_summary_ht_path"], type=ClickPathlibPath()),
                                click.Argument(["gene_maximums_ht_path"], type=ClickPathlibPath())]))
