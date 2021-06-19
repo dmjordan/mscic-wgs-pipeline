@@ -86,6 +86,10 @@ white_rare_path = white_only_path.with_suffix(".rare_filtered.mt")
 black_rare_path = black_only_path.with_suffix(".rare_filtered.mt")
 asian_rare_path = asian_only_path.with_suffix(".rare_filtered.mt")
 hispanic_rare_path = hispanic_only_path.with_suffix(".rare_filtered.mt")
+white_lof_path = white_only_path.with_suffix(".LOF_filtered.mt")
+black_lof_path = black_only_path.with_suffix(".LOF_filtered.mt")
+asian_lof_path = asian_only_path.with_suffix(".LOF_filtered.mt")
+hispanic_lof_path = hispanic_only_path.with_suffix(".LOF_filtered.mt")
 white_exome_path = white_only_path.with_suffix(".exome_filtered.mt")
 black_exome_path = black_only_path.with_suffix(".exome_filtered.mt")
 asian_exome_path = asian_only_path.with_suffix(".exome_filtered.mt")
@@ -114,6 +118,10 @@ vcf_endpoints = {"full": sample_matched_path,
                  "black_rare": black_rare_path,
                  "hispanic_rare": hispanic_rare_path,
                  "asian_rare": asian_rare_path,
+                 "white_lof": white_lof_path,
+                 "black_lof": black_lof_path,
+                 "hispanic_lof": hispanic_lof_path,
+                 "asian_lof": asian_lof_path,
                  "white_exome": white_exome_path,
                  "black_exome": black_exome_path,
                  "hispanic_exome": hispanic_exome_path,
@@ -386,6 +394,12 @@ def task_mt2plink():
                             mtfile.with_suffix(".fam")],
                 "clean": True
             }
+    for endpoint_name in ("full", "gwas", "ld", "exome", "rare", "lof"):
+        yield {
+                "name": f"{endpoint_name}_race_split",
+                "actions": None,
+                "task_dep": [f"mt2plink:{race}_{endpoint_name}" for race in ('white', 'black', 'hispanic', 'asian')]
+                }
 
 
 def task_king():
