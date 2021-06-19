@@ -186,14 +186,6 @@ use rule genesis_base as pcrelate with:
 
 # variant subsets
 
-subset_tags = {
-    "GWAS_filtered": "gwas",
-    "rare_filtered": "rare",
-    "exome_filtered": "exome",
-    "VEP.LOF_filtered": "lof",
-    "VEP.pext_annotated.pext_filtered": "pext"
-}
-
 use rule hail_base as gwas_filter with:
     input:
         mt="{prefix}.mt"
@@ -233,17 +225,17 @@ use rule hail_base as prune_ld with:
 
 use rule hail_base as lof_filter with:
     input:
-        mt=f"{SAMPLE_MATCHED_STEM}.VEP.mt"
+        mt=f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt"
     output:
-        mt=directory(f"{SAMPLE_MATCHED_STEM}.VEP.LOF_filtered.mt")
+        mt=directory(f"{SAMPLE_MATCHED_STEM}.LOF_filtered.mt")
     params:
         hail_cmd="filter-lof-hc"
 
 use rule hail_base as pext_filter with:
     input:
-        mt=f"{SAMPLE_MATCHED_STEM}.VEP.pext_annotated.mt"
+        mt=f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
     output:
-        mt=f"{SAMPLE_MATCHED_STEM}.VEP.pext_annotated.pext_filtered.mt"
+        mt=f"{SAMPLE_MATCHED_STEM}.pext_filtered.mt"
     params:
         hail_cmd="filter-hi-pext"
 
@@ -308,8 +300,8 @@ use rule genesis_base as gwas_plots with:
 
 rule run_smmat:
     input:
-        lambda wildcards: [f"{SAMPLE_MATCHED_STEM}.{subset_tags[wildcards.subset]}.seq.gds",
-                           f"{SAMPLE_MATCHED_STEM}.{wildcards.phenotype}.null.RDS"]
+        f"{SAMPLE_MATCHED_STEM}.{{subset}}_filtered.seq.gds",
+        f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
         multiext("{phenotype}.{subset}.GENESIS.SMMAT", ".assoc.txt", ".manhattan.png", ".qq.png")
     resources:
@@ -320,7 +312,7 @@ rule run_smmat:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.filter}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.subset}
         """
 
 # variant annotation tasks
@@ -330,7 +322,7 @@ use rule hail_base as vep with:
         f"{SAMPLE_MATCHED_STEM}.mt",
         "vep/vep_config_script.json"
     output:
-        directory(f"{SAMPLE_MATCHED_STEM}.VEP.mt")
+        directory(f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt")
     params:
         hail_cmd="run-vep"
 
@@ -355,11 +347,11 @@ use rule hail_base as isoform_expression_ht with:
 
 use rule hail_base as annotate_pext with:
     input:
-        f"{SAMPLE_MATCHED_STEM}.VEP.mt",
+        f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt",
         "tx_annot.tx_summary.ht",
         "tx_annot.gene_maximums.ht"
     output:
-        f"{SAMPLE_MATCHED_STEM}.VEP.pext_annotated.mt"
+        f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
     params:
         hail_cmd="annotate-pext"
 
