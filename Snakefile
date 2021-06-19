@@ -18,7 +18,14 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity
 
 
 rule gwas_traits_of_interest:
-    input: expand("{phenotype}.GENESIS.assoc.txt", phenotype=TRAITS_OF_INTEREST)
+    input:
+        expand("{phenotype}.GENESIS.{suffix}",
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
+
+rule smmat_lof_traits_of_interest:
+    input:
+        expand("{phenotype}.LOF.GENESIS.SMMAT.{suffix}",
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
 
 # utility base tasks
@@ -231,6 +238,14 @@ use rule hail_base as lof_filter with:
     params:
         hail_cmd="filter-lof-hc"
 
+use rule hail_base as functional_filter with:
+    input:
+        mt=f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt"
+    output:
+        mt=directory(f"{SAMPLE_MATCHED_STEM}.functional_filtered.mt")
+    params:
+        hail_cmd="filter-functional-variation"
+
 use rule hail_base as pext_filter with:
     input:
         mt=f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
@@ -238,6 +253,16 @@ use rule hail_base as pext_filter with:
         mt=f"{SAMPLE_MATCHED_STEM}.pext_filtered.mt"
     params:
         hail_cmd="filter-hi-pext"
+
+
+use rule hail_base as pext_lof_filter with:
+    input:
+        mt=f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
+    output:
+        mt=f"{SAMPLE_MATCHED_STEM}.pext_LOF_filtered.mt"
+    params:
+        hail_cmd="filter-hi-pext-lof"
+
 
 use rule hail_base as chrom_split with:
     input:
@@ -247,8 +272,6 @@ use rule hail_base as chrom_split with:
     params:
         hail_cmd="split-chromosomes",
         hail_extra_args="{wildcards.chrom}"
-
-
 
 # association tests
 
@@ -354,7 +377,6 @@ use rule hail_base as annotate_pext with:
         f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
     params:
         hail_cmd="annotate-pext"
-
 
 
 # downstream analyses

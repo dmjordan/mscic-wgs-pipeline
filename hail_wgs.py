@@ -237,14 +237,19 @@ def run_vep(mt_path):
 cli.add_command(click.Command("run-vep", None, run_vep,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
+
+def replace_annotation_in_filename(mt_path, suffix):
+    if mt_path.stem.endswith("_annotated"):
+        return mt_path.with_suffix("").with_suffix(f".{suffix}.mt")
+    else:
+        return mt_path.with_suffix(f".{suffix}.mt")
+
+
 def filter_lof_hc(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.lof == "HC"))
-    if mt_path.stem.endswith("_annotated"):
-        outpath = mt_path.with_suffix("").with_suffix(".LOF_filtered.mt")
-    else:
-        outpath = mt_path.with_suffix(".LOF_filtered.mt")
+    outpath = replace_annotation_in_filename(mt_path, "LOF_filtered")
     mt.write(str(outpath), overwrite=True)
 cli.add_command(click.Command("filter-lof-hc", None, filter_lof_hc,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
@@ -262,7 +267,8 @@ def filter_functional_variation(mt_path):
                         )
                     ) & (x.tsl == 1))
     ))
-    mt.write(str(mt_path.with_suffix(".functional_filtered.mt")), overwrite=True)
+    outpath = replace_annotation_in_filename(mt_path, "functional_filtered")
+    mt.write(str(outpath), overwrite=True)
 cli.add_command(click.Command("filter-functional-variation", None, filter_functional_variation,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
@@ -304,10 +310,7 @@ def annotate_pext(mt_path, tx_summary_ht_path, gene_maximums_ht_path):
     mt = hl.read_matrix_table(str(mt_path))
     tx_summary_ht = hl.read_table(str(tx_summary_ht_path))
     mt = tx_annotation.tx_annotate_mt(mt, tx_summary_ht, gene_maximums_ht_path)
-    if mt_path.stem.endswith("_annotated"):
-        outpath = mt_path.with_suffix("").with_suffix(".pext_annotated.mt")
-    else:
-        outpath = mt_path.with_suffix(".pext_annotated.mt")
+    outpath = replace_annotation_in_filename(mt_path, "pext_annotated")
     mt.write(str(outpath), overwrite=True)
 cli.add_command(click.Command("annotate-pext", None, annotate_pext,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
@@ -319,10 +322,7 @@ def filter_hi_pext(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.tx_annotation.any(lambda x: x.mean_proportion > 0.9))
-    if mt_path.stem.endswith("_annotated"):
-        outpath = mt_path.with_suffix("").with_suffix(".pext_filtered.mt")
-    else:
-        outpath = mt_path.with_suffix(".pext_filtered.mt")
+    outpath = replace_annotation_in_filename(mt, mt_path, "pext_filtered")
     mt.write(str(outpath), overwrite=True)
 cli.add_command(click.Command("filter-hi-pext", None, filter_hi_pext,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
@@ -332,7 +332,8 @@ def filter_hi_pext_lof(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.tx_annotation.any(lambda x: (x.lof == hl.literal("HC")) & (x.mean_proportion > 0.9)))
-    mt.write(str(mt_path.with_suffix(".pext_LOF_filtered.mt")), overwrite=True)
+    outpath = replace_annotation_in_filename(mt_path, "pext_LOF_filtered")
+    mt.write(str(outpath), overwrite=True)
 cli.add_command(click.Command("filter-hi-pext-lof", None, filter_hi_pext_lof,
                               [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
