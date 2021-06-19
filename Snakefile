@@ -430,7 +430,7 @@ rule ldsc:
 
 GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
 MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
-ALL_MASHR_MODELS = [model.with_suffix("").name for model in MASHR_MODELS_DIR.glob("*.db")]
+ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
 
 rule metaxcan_harmonize:
     input:
@@ -462,10 +462,10 @@ rule metaxcan_harmonize:
 rule spredixcan:
     input:
         harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt",
-        model= MASHR_MODELS_DIR / "{model}.db",
-        covar = MASHR_MODELS_DIR / "{model}.txt.gz"
+        model= GTEX_MODELS_DIR / "{model_type}" / "{model_type}_{tissue}.db",
+        covar = GTEX_MODELS_DIR / "{model_type}" / "{model_type}_{tissue}.txt.gz"
     output:
-        predixcan="spredixcan_results/{phenotype}.{model}.csv"
+        predixcan="spredixcan_results/{phenotype}.{model_type}_{tissue}.csv"
     params:
         script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SPrediXcan.py")
     shell:
@@ -490,13 +490,13 @@ rule spredixcan:
                 --output_file {output.predixcan}
         """
 
-rule s_multixcan:
+rule smultixcan:
     input:
-        expand("spredixcan_results/{phenotype}.{model}.csv", model=ALL_MASHR_MODELS, allow_missing=True),
+        expand("spredixcan_results/{phenotype}.{model_type}_{tissue}.csv", tissue=ALL_TISSUES, allow_missing=True),
         harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt",
-        covar=GTEX_MODELS_DIR / "gtex_v8_expression_mashr_snp_smultixcan_covariance.txt.gz"
+        covar=GTEX_MODELS_DIR / "gtex_v8_expression_{model_type}_snp_smultixcan_covariance.txt.gz"
     output:
-        multixcan="spredixcan_results/{phenotype}.smultixcan.txt"
+        multixcan="spredixcan_results/{phenotype}.{model_type}_smultixcan.txt"
     params:
         script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SMulTiXcan.py")
     shell:
