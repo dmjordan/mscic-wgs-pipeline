@@ -16,6 +16,12 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity
         "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
+wildcard_constraints:
+    chrom=r"chr([0-9]{1,2}|[XYM])"
+
+
+# aggregation rules
+
 
 rule gwas_traits_of_interest:
     input:
@@ -27,6 +33,15 @@ rule smmat_lof_traits_of_interest:
         expand("{phenotype}.LOF.GENESIS.SMMAT.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
+
+rule metaxcan_eqtl_mashr_traits_of_interest:
+    input:
+        expand("spredixcan_results/eqtl/mashr/{phenotype}.smultixcan.txt", phenotype=TRAITS_OF_INTEREST)
+
+
+rule metaxcan_eqtl_elastic_net_traits_of_interest:
+    input:
+        expand("spredixcan_results/eqtl/elastic_net/{phenotype}.smultixcan.txt", phenotype=TRAITS_OF_INTEREST)
 
 # utility base tasks
 
@@ -437,6 +452,8 @@ rule metaxcan_harmonize:
         assoc="{phenotype}.GENESIS.assoc.txt"
     output:
         harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt"
+    resources:
+        mem_mb=20000
     params:
         script_path=os.path.join(config["scriptsdir"], "summary-gwas-imputation", "src", "gwas_parsing.py"),
         metadata_file=os.path.join(config["resourcesdir"], "metaxcan_data", "reference_panel_1000G", "variant_metadata.txt.gz")
@@ -444,14 +461,14 @@ rule metaxcan_harmonize:
         """python {params.script_path} \
             -separator ' '  \
             -gwas_file {input.assoc}  \
-            -snp_reference_metadata {params.metadata_file} METADATA  \
+            -snp_reference_metadata {params.metadata_file} METADATA \
             -output_column_map variant.id variant_id  \
             -output_column_map other.allele non_effect_allele  \
             -output_column_map effect.allele effect_allele  \
             -output_column_map Est effect_size  \
             -output_column_map Est.SE standard_error  \
             -output_column_map Score.pval pvalue  \
-            -output_column_map chr chromosome --chromosome_format  \
+            -output_column_map chr chromosome \
             -output_column_map pos position  \
             -output_column_map n.obs sample_size  \
             -output_column_map freq frequency  \
@@ -462,14 +479,14 @@ rule metaxcan_harmonize:
 rule spredixcan:
     input:
         harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt",
-        model= GTEX_MODELS_DIR / "{model_type}" / "{model_type}_{tissue}.db",
-        covar = GTEX_MODELS_DIR / "{model_type}" / "{model_type}_{tissue}.txt.gz"
+        model= GTEX_MODELS_DIR / "eqtl" / "{model_type}" / "{model_type}_{tissue}.db",
+        covar = GTEX_MODELS_DIR / "eqtl" / "{model_type}" / "{model_type}_{tissue}.txt.gz"
     output:
-        predixcan="spredixcan_results/{phenotype}.{model_type}_{tissue}.csv"
+        predixcan="spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.csv"
     params:
         script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SPrediXcan.py")
     shell:
-        """mkdir -p spredixcan_results
+        """mkdir -p spredixcan_results/eqtl/{wildcards.model_type}
         python {params.script_path}  \
                 --gwas_file {input.harmonized}  \
                 --snp_column panel_variant_id  \
@@ -492,21 +509,21 @@ rule spredixcan:
 
 rule smultixcan:
     input:
-        expand("spredixcan_results/{phenotype}.{model_type}_{tissue}.csv", tissue=ALL_TISSUES, allow_missing=True),
+        expand("spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.csv", tissue=ALL_TISSUES, allow_missing=True),
         harmonized="{phenotype}.GENESIS.assoc.metaxcan_harmonized.txt",
         covar=GTEX_MODELS_DIR / "gtex_v8_expression_{model_type}_snp_smultixcan_covariance.txt.gz"
     output:
-        multixcan="spredixcan_results/{phenotype}.{model_type}_smultixcan.txt"
+        multixcan="spredixcan_results/eqtl/{model_type}/{phenotype}.smultixcan.txt"
     params:
         script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SMulTiXcan.py")
     shell:
         """python {params.script_path}  \
-                --models_folder {MASHR_MODELS_DIR}  \
-                '--models_name_pattern "mashr_(.*).db" '
+                --models_folder {GTEX_MODELS_DIR}/eqtl/{wildcards.model_type}  \
+                --models_name_pattern "{wildcards.model_type}_(.*).db" \
                 --snp_covariance {input.covar}  \
-                --metaxcan_folder {spredixcan_results}  \
-                f'--metaxcan_filter "{wildcards.phenotype}.mashr_(.*).csv" '
-                '--metaxcan_file_name_parse_pattern "(.*).mashr_(.*).csv" '
+                --metaxcan_folder spredixcan_results/eqtl/{wildcards.model_type}  \
+                --metaxcan_filter "{wildcards.phenotype}.(.*).csv" \
+                --metaxcan_file_name_parse_pattern "(.*).(.*).csv" \
                 --gwas_file {input.harmonized}  \
                 --snp_column panel_variant_id  \
                 --chromosome_column chromosome  \
