@@ -517,13 +517,13 @@ rule smultixcan:
     params:
         script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SMulTiXcan.py")
     shell:
-        """python {params.script_path}  \
+        r"""python {params.script_path}  \
                 --models_folder {GTEX_MODELS_DIR}/eqtl/{wildcards.model_type}  \
-                --models_name_pattern "{wildcards.model_type}_(.*).db" \
+                --models_name_pattern "{wildcards.model_type}_(.*)\.db" \
                 --snp_covariance {input.covar}  \
                 --metaxcan_folder spredixcan_results/eqtl/{wildcards.model_type}  \
-                --metaxcan_filter "{wildcards.phenotype}.(.*).csv" \
-                --metaxcan_file_name_parse_pattern "(.*).(.*).csv" \
+                --metaxcan_filter "{wildcards.phenotype}\.(.*)\.csv" \
+                --metaxcan_file_name_parse_pattern "(.*)\.(.*)\.csv" \
                 --gwas_file {input.harmonized}  \
                 --snp_column panel_variant_id  \
                 --chromosome_column chromosome  \
