@@ -539,3 +539,16 @@ rule smultixcan:
                 --throw  \
                 --output {output.multixcan} \
         """
+
+rule coloc2:
+    input:
+        eqtl="/sc/arion/projects/mscic1/resources/GTEx_Analysis_v8_eQTL/{tissue}.v8.signif_variant_gene_pairs.txt.gz",
+        assoc="{phenotype}.GENESIS.assoc.txt"
+    output:
+        "coloc2/{phenotype}.{tissue}.full_table.txt"
+    params:
+        prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
+    resources:
+        cpus=48,
+        single_host=1
+    script: "do_coloc2.R"

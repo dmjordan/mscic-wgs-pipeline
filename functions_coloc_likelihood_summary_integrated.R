@@ -3,7 +3,9 @@
 
 #### original code by claudia giambartolomei
 #### modifications by james boocock, eli stahl, and amanda dobbyn
-#### and, alter, daniel jordan
+#### and, later, daniel jordan
+
+here::i_am("functions_coloc_likelihood_summary_integrated.R")
 
 library(foreach)
 library(doParallel)
@@ -400,7 +402,7 @@ coloc.eqtl.biom <- function(eqtl.df, biom.df, p12=1e-6, useBETA=TRUE, plot=FALSE
   if (class(eqtl.df$ProbeID)!="character") stop("When reading the data frame, make sure class of ProbeID in eQTL data is a character")
 
   #source("/sc/orga/projects/psychgen/resources/COLOC2/COLOC_scripts/scripts/optim_function.R")
-  source("optim_function.R")
+  source(here::here("optim_function.R"))
   print(head(eqtl.df))
   print(head(biom.df))
   eqtl.df.rs = eqtl.df[grep("rs",eqtl.df$SNPID),]
@@ -646,9 +648,9 @@ if(!is.null(bed_input_file)){
     bed = NULL
 }
 
-duplicated_snp_list = data.frame()
-res.all = data.frame()
-for(i in 1:length(list.probes)){
+#duplicated_snp_list = data.frame()
+#res.all = data.frame()
+res.all <- foreach(i=1:length(list.probes), .combine=rbind) %dopar% {
        ProbeID = as.character(list.probes[i]) # important for probe names that are numbers
        region.eqtl <- eqtl.df[eqtl.dfByProbe[[ProbeID]],]
        pos.start <- min(region.eqtl$POS)
@@ -656,9 +658,9 @@ for(i in 1:length(list.probes)){
        chrom = region.eqtl$CHR[1]
        matches <- which(chrom == biom.df$CHR & biom.df$POS >= pos.start & biom.df$POS <= pos.end )
        region.biom <- biom.df[matches, ]
-       duplicated_snp_list = rbind(duplicated_snp_list, data.frame(ProbeID = ProbeID, data="biom",remove_dupl(region.biom)[[2]]))
+       #duplicated_snp_list = rbind(duplicated_snp_list, data.frame(ProbeID = ProbeID, data="biom",remove_dupl(region.biom)[[2]]))
        region.biom = remove_dupl(region.biom)[[1]]
-       duplicated_snp_list = rbind(duplicated_snp_list, data.frame(ProbeID = ProbeID, data="eqtl",remove_dupl(region.eqtl)[[2]]))
+       #duplicated_snp_list = rbind(duplicated_snp_list, data.frame(ProbeID = ProbeID, data="eqtl",remove_dupl(region.eqtl)[[2]]))
        region.eqtl = remove_dupl(region.eqtl)[[1]]
 
        # Loop over each biomarker 
@@ -851,9 +853,10 @@ for(i in 1:length(list.probes)){
       #  return(NULL)
       #}
       #return(res.out)
-      if(nrow(res.out)!=0){
-        res.all = rbind(res.all, res.out)
-      }
+      #if(nrow(res.out)!=0){
+      #  res.all = rbind(res.all, res.out)
+      #}
+  res.out
 }
 
    outfname = paste(outfolder, prefix, '_summary.tab', sep='')
