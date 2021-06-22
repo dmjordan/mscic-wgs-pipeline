@@ -33,10 +33,19 @@ assoc <- foreach(gdsPath=gdsFiles,
                         null.model=nullmod,
                         sparse=FALSE, genome.build="hg38")
         seqResetFilter(seqData)
+        
         alleles <- tibble(variant.id=seqGetData(seqData, "variant.id"),
                           effect.allele=altChar(seqData),
                           other.allele=refChar(seqData))
         assoc_subdf <- left_join(assoc_subdf, alleles)
+        if (nullmod$family == "binomial") { 
+            # calculate cases and controls
+            seqSetFilter(seqData, sample.id=row.names(nullmod$outcome)[nullmod$outcome == 0])
+            n.controls <- colSums(!is.na(getGenotype(seqData)))
+            seqSetFilter(seqData, sample.id=row.names(nullmod$outcome)[nullmod$outcome == 1])
+            n.cases <- colSums(!is.na(getGenotype(seqData)))
+            assoc_subdf <- add_column(assoc_subdf, n.cases=n.cases, n.controls=n.controls)
+        }
         seqClose(seqFile)
         return(assoc_subdf)
     }
