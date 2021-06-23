@@ -5,8 +5,6 @@
 #### modifications by james boocock, eli stahl, and amanda dobbyn
 #### and, later, daniel jordan
 
-here::i_am("functions_coloc_likelihood_summary_integrated.R")
-
 library(foreach)
 library(doParallel)
 library(GenomicRanges)
@@ -402,7 +400,6 @@ coloc.eqtl.biom <- function(eqtl.df, biom.df, p12=1e-6, useBETA=TRUE, plot=FALSE
   if (class(eqtl.df$ProbeID)!="character") stop("When reading the data frame, make sure class of ProbeID in eQTL data is a character")
 
   #source("/sc/orga/projects/psychgen/resources/COLOC2/COLOC_scripts/scripts/optim_function.R")
-  source(here::here("optim_function.R"))
   print(head(eqtl.df))
   print(head(biom.df))
   eqtl.df.rs = eqtl.df[grep("rs",eqtl.df$SNPID),]
@@ -705,7 +702,8 @@ res.all <- foreach(i=1:length(list.probes), .combine=rbind) %dopar% {
          message(ProbeID, ": ", nsnps, " snps in both biomarker and eQTL data. From: ", pos.start, " To: ", pos.end)
          if (nsnps <= min_snps ) {
              message("There are not enough shared snps in the region")
-             next
+             #next
+             return(NULL)
              }else{
          if(!is.null(bed)){
             merged.ranges = GRanges(seqnames=merged.data$CHR.biom,IRanges(start=merged.data$POS.biom,end=merged.data$POS.biom))

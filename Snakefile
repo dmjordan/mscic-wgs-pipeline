@@ -16,6 +16,10 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", "severity
         "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
+GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
+MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
+ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
+
 wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])"
 
@@ -42,6 +46,10 @@ rule metaxcan_eqtl_mashr_traits_of_interest:
 rule metaxcan_eqtl_elastic_net_traits_of_interest:
     input:
         expand("spredixcan_results/eqtl/elastic_net/{phenotype}.smultixcan.txt", phenotype=TRAITS_OF_INTEREST)
+
+rule coloc2_traits_of_interest:
+    input:
+        expand("coloc2/{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
 # utility base tasks
 
@@ -443,9 +451,6 @@ rule ldsc:
 
 # MetaXcan
 
-GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
-MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
-ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
 
 rule metaxcan_harmonize:
     input:
@@ -549,6 +554,9 @@ rule coloc2:
     params:
         prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
     resources:
-        cpus=48,
+        cpus=24,
         single_host=1
-    script: "do_coloc2.R"
+    #    queue="private",
+    #    host="schade01-1"
+
+    script: os.path.join(config["scriptsdir"], "do_coloc2.R")
