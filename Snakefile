@@ -132,8 +132,8 @@ rule vcf2seqgds_single:
     output:
         gds="{prefix}.seq.gds"
     resources:
-        cpus=48,
-        single_host=1
+        cpus=64,
+        mem_mb=12000
     script: os.path.join(config["scriptsdir"], "seqvcf2gds.R")
 
 # qc steps
@@ -550,7 +550,8 @@ rule coloc2:
         eqtl="/sc/arion/projects/mscic1/resources/GTEx_Analysis_v8_eQTL/{tissue}.v8.signif_variant_gene_pairs.txt.gz",
         assoc="{phenotype}.GENESIS.assoc.txt"
     output:
-        "coloc2/{phenotype}.{tissue}.full_table.txt"
+        "coloc2/{phenotype}.{tissue}.full_table.txt",
+        directory("coloc2/{phenotype}.{tissue}.coloc.output.perSNP")
     params:
         prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
     resources:

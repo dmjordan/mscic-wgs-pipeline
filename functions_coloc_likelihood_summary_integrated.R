@@ -630,7 +630,10 @@ overlap.df<-merge(biom.df,eqtl.df,by="SNPID",suffixes=c(".biom",".eqtl"))
 
 biom.df$sdY.biom = sdY.est((overlap.df$SE.biom)^2,overlap.df$MAF.eqtl,overlap.df$N.biom,overlap.df$BETA.biom) 
 message("Running in parallel")
-registerDoParallel(cores=cores)
+hosts <- strsplit(Sys.getenv("LSB_HOSTS"), " ")[[1]]
+cluster_hosts <- hosts
+cl <- makeCluster(cluster_hosts, rshcmd="blaunch")
+registerDoParallel(cl)
 list.probes = bed$ProbeID
 print(class(eqtl.df))
 eqtl.dfByProbe = split(seq(nrow(eqtl.df)), eqtl.df$ProbeID)
