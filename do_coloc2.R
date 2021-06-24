@@ -33,6 +33,6 @@ coloc_results <- coloc.eqtl.biom(eqtl_df, assoc_df, outfolder="coloc2",
                                  prefix=snakemake@params[["prefix"]], cores=snakemake@resources[["cpus"]],
                                  save.coloc.output=TRUE, match_snpid=FALSE)
 
-write_tsv(coloc_results, paste0("coloc2/", snakemake@params[["prefix"]], "_full_table.txt"))
+write_tsv(coloc_results, paste0("coloc2/", snakemake@params[["prefix"]], ".full_table.txt"))
 
 NULL
