@@ -133,7 +133,7 @@ rule vcf2seqgds_single:
         gds="{prefix}.seq.gds"
     resources:
         cpus=64,
-        mem_mb=12000
+        single_host=1
     script: os.path.join(config["scriptsdir"], "seqvcf2gds.R")
 
 # qc steps
@@ -555,6 +555,7 @@ rule coloc2:
     params:
         prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
     resources:
-        cpus=32
+        cpus=32,
+        mem_mb=12000
 
     script: os.path.join(config["scriptsdir"], "do_coloc2.R")
