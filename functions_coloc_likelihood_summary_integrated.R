@@ -630,10 +630,7 @@ overlap.df<-merge(biom.df,eqtl.df,by="SNPID",suffixes=c(".biom",".eqtl"))
 
 biom.df$sdY.biom = sdY.est((overlap.df$SE.biom)^2,overlap.df$MAF.eqtl,overlap.df$N.biom,overlap.df$BETA.biom) 
 message("Running in parallel")
-hosts <- strsplit(Sys.getenv("LSB_HOSTS"), " ")[[1]]
-cluster_hosts <- hosts
-cl <- makeCluster(cluster_hosts, rshcmd="blaunch")
-registerDoParallel(cl)
+registerDoParallel(cores=cores)
 list.probes = bed$ProbeID
 print(class(eqtl.df))
 eqtl.dfByProbe = split(seq(nrow(eqtl.df)), eqtl.df$ProbeID)
@@ -650,7 +647,7 @@ if(!is.null(bed_input_file)){
 
 #duplicated_snp_list = data.frame()
 #res.all = data.frame()
-res.all <- foreach(i=1:length(list.probes), .combine=rbind) %dopar% {
+res.all <- foreach(i=1:length(list.probes), .combine=rbind) %do% {
        ProbeID = as.character(list.probes[i]) # important for probe names that are numbers
        region.eqtl <- eqtl.df[eqtl.dfByProbe[[ProbeID]],]
        pos.start <- min(region.eqtl$POS)

@@ -555,7 +555,6 @@ rule coloc2:
     params:
         prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
     resources:
-        cpus=32,
-        mem_mb=12000
+        mem_mb=16000
 
     script: os.path.join(config["scriptsdir"], "do_coloc2.R")

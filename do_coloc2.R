@@ -29,8 +29,9 @@ cat("detected a", type, "phenotype\n")
 assoc_df <- formatColoc(snakemake@input[["assoc"]], type=type, eqtl=FALSE)
 cat("loaded", nrow(assoc_df), "lines\n")
 assoc_df$type <- type
+if (!file.exists("coloc2")) dir.create("coloc2")
 coloc_results <- coloc.eqtl.biom(eqtl_df, assoc_df, outfolder="coloc2",
-                                 prefix=snakemake@params[["prefix"]], cores=snakemake@resources[["cpus"]],
+                                 prefix=snakemake@params[["prefix"]],  # cores=snakemake@resources[["cpus"]],
                                  match_snpid=FALSE)
 
 write_tsv(coloc_results, paste0("coloc2/", snakemake@params[["prefix"]], ".full_table.txt"))
