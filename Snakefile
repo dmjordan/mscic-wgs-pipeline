@@ -328,6 +328,47 @@ rule null_model:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
         """
 
+rule null_model_race:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        indiv_list="{race}.indiv_list.txt"
+    output:
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}_{{race}}.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
+                                                {SAMPLE_MATCHED_STEM} \\
+                                                {wildcards.phenotype} \\
+                                                _{wildcards.race} $(sed 1d {input.indiv_list} | tr '\n' ' ') 
+        """
+
+rule null_model_loo:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+    output:
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}_leave_{{sample}}_out.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
+                                                {SAMPLE_MATCHED_STEM} \\
+                                                {wildcards.phenotype} \\
+                                                _leave_{wildcards.sample}_out {wildcards.sample} 
+        """
+
 use rule null_model as run_gwas with: 
     input:
         gds=f"{GWAS_STEM}.shards.seq.gds",

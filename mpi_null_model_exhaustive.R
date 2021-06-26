@@ -9,10 +9,14 @@ registerDoMPI(cl)
 args <- commandArgs(trailingOnly=TRUE)
 file_prefix <- args[[1]]
 endpoint <- args[[2]]
+subset_tag <- if (length(args) > 2) args[[3]] else ""
+exclude_samples <- if (length(args) > 3) as.character(args[4:length(args)]) else character(0)
+
 
 read_csv("/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv") %>%
   rename(scanID=X1) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
+sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
 
 clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
   append(list("age",
@@ -44,7 +48,7 @@ models <- foreach (covars=all_covar_combinations,
         tryCatch({
             model <- fitNullModel(scan_annot, outcome=endpoint,
                                   covars=covars,
-                                  cov.mat=grm, family=family)
+                                  sample.id=sample.id, cov.mat=grm, family=family)
             model$covars <- covars
             model
         }, error=function(cnd) list(error=cnd$message, converged=FALSE))
@@ -61,7 +65,8 @@ print(enframe(error_messages) %>% count(value))
 map_dbl(succeeded_models, "AIC") %>% compact %>% which.min %>% pluck(succeeded_models, .) -> model
 cat("Best combination among succeeded models:", model$covars, "\n")
 
-saveRDS(model, paste(file_prefix, endpoint, "null", "RDS", sep="."))
+
+saveRDS(model, paste(file_prefix, paste0(endpoint, subset_tag), "null", "RDS", sep="."))
 
 closeCluster(cl)
 mpi.quit()
