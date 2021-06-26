@@ -491,7 +491,8 @@ rule spredixcan:
     output:
         predixcan="spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.csv"
     params:
-        script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SPrediXcan.py")
+        script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SPrediXcan.py"),
+        pval_script_path=os.path.join(config["scriptsdir"], "p_adjust.py")
     shell:
         """mkdir -p spredixcan_results/eqtl/{wildcards.model_type}
         python {params.script_path}  \
@@ -512,6 +513,7 @@ rule spredixcan:
                 --model_db_path {input.model}  \
                 --covariance {input.covar}  \
                 --output_file {output.predixcan}
+        python {params.pval_script_path} {output.predixcan}
         """
 
 rule smultixcan:
@@ -522,7 +524,9 @@ rule smultixcan:
     output:
         multixcan="spredixcan_results/eqtl/{model_type}/{phenotype}.smultixcan.txt"
     params:
-        script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SMulTiXcan.py")
+        script_path=os.path.join(config["scriptsdir"], "MetaXcan", "software", "SMulTiXcan.py"),
+        pval_script_path=os.path.join(config["scriptsdir"],"p_adjust.py")
+
     shell:
         r"""python {params.script_path}  \
                 --models_folder {GTEX_MODELS_DIR}/eqtl/{wildcards.model_type}  \
@@ -544,7 +548,8 @@ rule smultixcan:
                 --keep_non_rsid  \
                 --cutoff_condition_number 30  \
                 --throw  \
-                --output {output.multixcan} \
+                --output {output.multixcan}
+        python {params.pval_script_path} {output.multixcan}
         """
 
 rule coloc2:
