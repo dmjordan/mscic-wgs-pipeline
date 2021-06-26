@@ -229,13 +229,14 @@ cli.add_command(click.Command("subset-mt-samples", None, subset_mt_samples,
                                click.Argument(["indiv_list"], type=ClickPathlibPath()),
                                click.Argument(["out_path"], type=ClickPathlibPath())]))
 
-def run_vep(mt_path):
+def run_vep(mt_path, extra_args):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.vep(mt, config="/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json")
     mt.write(str(mt_path.with_suffix(".VEP_annotated.mt")), overwrite=True)
 cli.add_command(click.Command("run-vep", None, run_vep,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
+                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
+                               click.Argument(["extra_args"], nargs=-1)]))
 
 
 def replace_annotation_in_filename(mt_path, suffix):

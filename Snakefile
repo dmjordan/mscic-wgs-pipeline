@@ -132,8 +132,7 @@ rule vcf2seqgds_single:
     output:
         gds="{prefix}.seq.gds"
     resources:
-        cpus=64,
-        single_host=1
+        cpus=64
     script: os.path.join(config["scriptsdir"], "seqvcf2gds.R")
 
 # qc steps
@@ -250,6 +249,9 @@ use rule hail_base as prune_ld with:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.LD_pruned.mt")
+    resources:
+        cpus=128,
+        mem_mb=8000
     params:
         hail_cmd="ld-prune"
 
