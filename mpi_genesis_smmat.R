@@ -34,7 +34,8 @@ assoc <- foreach(gRanges=splitGeneRanges,
             }, finally=seqClose(gdsFile))
 }
 
-assoc <- mutate(assoc, fdr=p.adjust(pval_SMMAT, "fdr"), bonferroni=p.adjust(pval_SMMAT, "bonferroni"))
+assoc %>% filter(n.sample.alt > 1) %>% mutate(fdr=p.adjust(pval_SMMAT, "fdr"),
+                                              bonferroni=p.adjust(pval_SMMAT, "bonferroni")) -> assoc
 write_delim(assoc, paste(model_name, 'GENESIS', 'SMMAT', 'assoc', 'txt', sep='.'))
 
 closeCluster(cl)
