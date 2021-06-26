@@ -34,8 +34,8 @@ rule gwas_traits_of_interest:
 
 rule smmat_lof_traits_of_interest:
     input:
-        expand("{phenotype}.LOF.GENESIS.SMMAT.{suffix}",
-            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
+        expand("{phenotype}.LOF.GENESIS.SMMAT.assoc.txt",
+            phenotype=TRAITS_OF_INTEREST)
 
 
 rule metaxcan_eqtl_mashr_traits_of_interest:
@@ -351,7 +351,7 @@ rule run_smmat:
         f"{SAMPLE_MATCHED_STEM}.{{subset}}_filtered.seq.gds",
         f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
-        multiext("{phenotype}.{subset}.GENESIS.SMMAT", ".assoc.txt", ".manhattan.png", ".qq.png")
+        "{phenotype}.{subset}.GENESIS.SMMAT.assoc.txt"
     resources:
         cpus=128,
         mem_mb=16000
@@ -360,7 +360,7 @@ rule run_smmat:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.subset}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.subset}
         """
 
 # variant annotation tasks
