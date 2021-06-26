@@ -1,6 +1,6 @@
 import click
 import pandas as pd
-import statsmodels.stats as sm
+import statsmodels.api as sm
 
 
 @click.command()
