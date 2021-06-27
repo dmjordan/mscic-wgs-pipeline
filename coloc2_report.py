@@ -1,14 +1,15 @@
 import pandas as pd
 import typing
 import os
+from tqdm import tqdm
 
 if typing.TYPE_CHECKING:
     from snakemake.script import Snakemake
     snakemake: Snakemake
 
 tables = []
-for infile in snakemake.input:
-    phenotype, tissue, _full_table, _csv = os.basename(infile).split(".")
+for infile in tqdm(snakemake.input):
+    phenotype, tissue, _full_table, _csv = os.path.basename(infile).split(".")
     table = pd.read_csv(infile, sep="\t")
     table["phenotype"] = phenotype
     table["tissue"] = tissue

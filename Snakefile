@@ -58,7 +58,7 @@ rule coloc2_report_traits_of_interest:
         expand("coloc2/{phenotype}.{tissue}.full_table.txt",phenotype=TRAITS_OF_INTEREST,tissue=ALL_TISSUES)
     output:
         "coloc2_report.traits_of_interest.txt"
-    script: "coloc2_report.py"
+    script: os.path.join(config["scriptsdir"], "coloc2_report.py")
 
 # utility base tasks
 
