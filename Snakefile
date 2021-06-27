@@ -60,6 +60,15 @@ rule coloc2_report_traits_of_interest:
         "coloc2_report.traits_of_interest.txt"
     script: os.path.join(config["scriptsdir"], "coloc2_report.py")
 
+rule metaxcan_report_elastic_net_traits_of_interest:
+    input:
+        expand("spredixcan_results/eqtl/elastic_net/{phenotype}.{tissue}.csv", phenotype=TRAITS_OF_INTEREST,tissue=ALL_TISSUES),
+        expand("spredixcan_results/eqtl/elastic_net/{phenotype}.smultixcan.txt", phenotype=TRAITS_OF_INTEREST)
+    output:
+        "metaxcan_report.traits_of_interest.txt"
+    script: os.path.join(config["scriptsdir"], "metaxcan_report.py")
+
+
 # utility base tasks
 
 rule hail_base:
