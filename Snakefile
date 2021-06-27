@@ -303,6 +303,7 @@ use rule hail_base as chrom_split with:
 rule design_matrix:
     input:
         COVARIATES_FILE,
+        expand(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir.txt", race=["WHITE", "BLACK", "ASIAN", "HISPANIC"]),
         flowcells="flowcells.csv",
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt",
         bvl="MSCIC_blood_viral_load_predictions.csv"
@@ -339,15 +340,14 @@ rule null_model_race:
         cpus=128,
         mem_mb=16000
     params:
-        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive.R")
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_single_race.R")
     shell:
         """
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
                                                 {SAMPLE_MATCHED_STEM} \\
                                                 {wildcards.phenotype} \\
-                                                _{wildcards.race} $(sed 1d {input.indiv_list} | tr '\n' ' ') 
-        """
+                                                {wildcards.race}        """
 
 rule null_model_loo:
     input:
