@@ -404,6 +404,15 @@ rule run_smmat:
         mpirun --mca mpi_warn_on_fork 0 Rscript {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.subset}
         """
 
+rule metal_three_races:
+    input:
+        expand("{phenotype}_{race}",
+            race=["WHITE", "BLACK", "HISPANIC"],
+            allow_missing=True)
+    output:
+        "{phenotype}.3races_meta.tbl"
+    script: "run_metal.py"
+
 # variant annotation tasks
 
 use rule hail_base as vep with:

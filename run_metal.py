@@ -1,11 +1,14 @@
 import subprocess
-import click
 import os
 from io import StringIO
+import typing
 
-@click.command()
-@click.argument("files", nargs=-1)
-@click.option("--outfile", "-o", type=click.Path(writable=True, dir_okay=False), default="METAANALYSIS.TBL")
+import click
+
+if typing.TYPE_CHECKING:
+    from snakemake.script import Snakemake
+    snakemake: Snakemake
+
 def main(files, outfile):
     metal_script_buffer = StringIO("""
 SCHEME SE
@@ -24,5 +27,14 @@ STDERR Est.SE
     subprocess.run("/hpc/packages/minerva-centos7/metal/2018-08-28/bin/metal",
                    text=True, check=True, stdin=metal_script_buffer)
 
+click_main = click.Command(callback=main,
+                           params=[click.Argument(["files"], nargs=-1),
+                                   click.Option(["--outfile", "-o"],
+                                                type=click.Path(writable=True, dir_okay=False),
+                                                default="METAANALYSIS.TBL")])
+
 if __name__ == "__main__":
-    main()
+    try:
+        main(snakemake.input, snakemake.output)
+    except NameError:
+        click_main()
