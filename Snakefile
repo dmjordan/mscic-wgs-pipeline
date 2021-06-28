@@ -21,7 +21,9 @@ MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
 ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
 
 wildcard_constraints:
-    chrom=r"chr([0-9]{1,2}|[XYM])"
+    chrom=r"chr([0-9]{1,2}|[XYM])",
+    race=r"[A-Z]+",
+    phenotype_untagged=r"[a-z_]+"
 
 
 # aggregation rules
@@ -317,7 +319,7 @@ rule null_model:
         DESIGN_MATRIX,
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     resources:
         cpus=128,
         mem_mb=16000
@@ -326,7 +328,7 @@ rule null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
 rule null_model_race:
@@ -335,7 +337,7 @@ rule null_model_race:
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
         indiv_list="{race}.indiv_list.txt"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}_{{race}}.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_{{race}}.null.RDS"
     resources:
         cpus=128,
         mem_mb=16000
@@ -346,7 +348,7 @@ rule null_model_race:
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
                                                 {SAMPLE_MATCHED_STEM} \\
-                                                {wildcards.phenotype} \\
+                                                {wildcards.phenotype_untagged} \\
                                                 {wildcards.race}        """
 
 rule null_model_loo:
@@ -354,7 +356,7 @@ rule null_model_loo:
         DESIGN_MATRIX,
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}_leave_{{sample}}_out.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_leave_{{sample}}_out.null.RDS"
     resources:
         cpus=128,
         mem_mb=16000
@@ -365,7 +367,7 @@ rule null_model_loo:
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
                                                 {SAMPLE_MATCHED_STEM} \\
-                                                {wildcards.phenotype} \\
+                                                {wildcards.phenotype_untagged} \\
                                                 _leave_{wildcards.sample}_out {wildcards.sample} 
         """
 
@@ -406,11 +408,11 @@ rule run_smmat:
 
 rule metal_three_races:
     input:
-        expand("{phenotype}_{race}",
+        expand("{phenotype_untagged}_{race}.GENESIS.assoc.txt",
             race=["WHITE", "BLACK", "HISPANIC"],
             allow_missing=True)
     output:
-        "{phenotype}.3races_meta.tbl"
+        "{phenotype_untagged}.3races_meta.tbl"
     script: "run_metal.py"
 
 # variant annotation tasks
