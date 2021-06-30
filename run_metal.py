@@ -1,7 +1,8 @@
 import subprocess
 import os
-from io import StringIO
 import typing
+from tempfile import NamedTemporaryFile
+import shlex
 
 import click
 
@@ -10,24 +11,29 @@ if typing.TYPE_CHECKING:
     snakemake: Snakemake
 
 def main(files, outfile):
-    metal_script_buffer = StringIO("""
-SCHEME SE
+    with NamedTemporaryFile(mode='w', dir='/sc/arion/scratch/jordad05', delete=False) as metalfile:
+
+        print("""
+SCHEME STDERR
 MARKER variant.id
 ALLELE effect.allele other.allele
 PVALUE Score.pval
 EFFECT Est
 STDERR Est.SE
-""")
-    for file in files:
-        print(f"PROCESS {file}", file=metal_script_buffer)
-    out_prefix, out_suffix = os.path.splitext(outfile)
-    print(f"OUTFILE {out_prefix} {out_suffix}", file=metal_script_buffer)
-    print("ANALYZE", file=metal_script_buffer)
-    print("QUIT", file=metal_script_buffer)
-    subprocess.run("/hpc/packages/minerva-centos7/metal/2018-08-28/bin/metal",
-                   text=True, check=True, stdin=metal_script_buffer)
+WEIGHT n.obs
+""", file=metalfile)
+        for file in files:
+            print(f"PROCESS {file}", file=metalfile)
+        out_prefix, out_suffix = os.path.splitext(outfile)
+        print(f"OUTFILE {out_prefix[:-1]} {out_suffix}", file=metalfile)
+        print("ANALYZE", file=metalfile)
+        print("QUIT", file=metalfile)
+    metalfile_name = shlex.quote(metalfile.name)
+    subprocess.run(f"ml metal && metal {metalfile_name}",
+                   text=True, check=True, shell=True)
+    os.unlink(metalfile.name)
 
-click_main = click.Command(callback=main,
+click_main = click.Command("run_metal", callback=main,
                            params=[click.Argument(["files"], nargs=-1),
                                    click.Option(["--outfile", "-o"],
                                                 type=click.Path(writable=True, dir_okay=False),
@@ -35,6 +41,6 @@ click_main = click.Command(callback=main,
 
 if __name__ == "__main__":
     try:
-        main(snakemake.input, snakemake.output)
+        main(snakemake.input, snakemake.output[0])
     except NameError:
         click_main()

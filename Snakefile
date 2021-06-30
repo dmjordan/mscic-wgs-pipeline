@@ -53,6 +53,12 @@ rule coloc2_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
+
+rule metal_traits_of_interest:
+    input:
+        expand("{phenotype}.race_meta_1.tbl", phenotype=TRAITS_OF_INTEREST)
+
+
 # utility base tasks
 
 rule hail_base:
@@ -371,14 +377,22 @@ rule null_model_loo:
                                                 _leave_{wildcards.sample}_out {wildcards.sample} 
         """
 
-use rule null_model as run_gwas with: 
+rule run_gwas:
     input:
         gds=f"{GWAS_STEM}.shards.seq.gds",
         null_nodel=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
         txt="{phenotype}.GENESIS.assoc.txt"
+    resources:
+        cpus=128,
+        mem_mb=16000
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
+        """
 
 use rule genesis_base as gwas_plots with:
     input:
@@ -412,9 +426,18 @@ rule metal_three_races:
             race=["WHITE", "BLACK", "HISPANIC"],
             allow_missing=True)
     output:
-        "{phenotype_untagged}.3races_meta.tbl"
-    script: "run_metal.py"
+        "{phenotype_untagged}.3races_meta_1.tbl"
+    script: os.path.join(config["scriptsdir"], "run_metal.py")
 
+
+rule metal_four_races:
+    input:
+        expand("{phenotype_untagged}_{race}.GENESIS.assoc.txt",
+            race=["WHITE", "BLACK", "HISPANIC", "ASIAN"],
+            allow_missing=True)
+    output:
+        "{phenotype_untagged}.race_meta_1.tbl"
+    script: os.path.join(config["scriptsdir"], "run_metal.py")
 # variant annotation tasks
 
 use rule hail_base as vep with:
