@@ -21,7 +21,9 @@ MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
 ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
 
 wildcard_constraints:
-    chrom=r"chr([0-9]{1,2}|[XYM])"
+    chrom=r"chr([0-9]{1,2}|[XYM])",
+    race=r"[A-Z]+",
+    phenotype_untagged=r"[a-z_]+"
 
 
 # aggregation rules
@@ -50,6 +52,11 @@ rule metaxcan_eqtl_elastic_net_traits_of_interest:
 rule coloc2_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
+
+rule metal_traits_of_interest:
+    input:
+        expand("{phenotype}.race_meta_1.tbl", phenotype=TRAITS_OF_INTEREST)
+
 
 # summary / report rules
 
@@ -321,6 +328,7 @@ use rule hail_base as chrom_split with:
 rule design_matrix:
     input:
         COVARIATES_FILE,
+        expand(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir.txt", race=["WHITE", "BLACK", "ASIAN", "HISPANIC"]),
         flowcells="flowcells.csv",
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt",
         bvl="MSCIC_blood_viral_load_predictions.csv"
@@ -334,7 +342,7 @@ rule null_model:
         DESIGN_MATRIX,
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     resources:
         cpus=128,
         mem_mb=16000
@@ -343,17 +351,65 @@ rule null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
-use rule null_model as run_gwas with: 
+rule null_model_race:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        indiv_list="{race}.indiv_list.txt"
+    output:
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_{{race}}.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_single_race.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
+                                                {SAMPLE_MATCHED_STEM} \\
+                                                {wildcards.phenotype_untagged} \\
+                                                {wildcards.race}        """
+
+rule null_model_loo:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+    output:
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_leave_{{sample}}_out.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
+                                                {SAMPLE_MATCHED_STEM} \\
+                                                {wildcards.phenotype_untagged} \\
+                                                _leave_{wildcards.sample}_out {wildcards.sample} 
+        """
+
+rule run_gwas:
     input:
         gds=f"{GWAS_STEM}.shards.seq.gds",
         null_nodel=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
     output:
         txt="{phenotype}.GENESIS.assoc.txt"
+    resources:
+        cpus=128,
+        mem_mb=16000
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
+        """
 
 use rule genesis_base as gwas_plots with:
     input:
@@ -381,6 +437,24 @@ rule run_smmat:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {input[0]} {input[1]} {wildcards.phenotype}.{wildcards.subset}
         """
 
+rule metal_three_races:
+    input:
+        expand("{phenotype_untagged}_{race}.GENESIS.assoc.txt",
+            race=["WHITE", "BLACK", "HISPANIC"],
+            allow_missing=True)
+    output:
+        "{phenotype_untagged}.3races_meta_1.tbl"
+    script: os.path.join(config["scriptsdir"], "run_metal.py")
+
+
+rule metal_four_races:
+    input:
+        expand("{phenotype_untagged}_{race}.GENESIS.assoc.txt",
+            race=["WHITE", "BLACK", "HISPANIC", "ASIAN"],
+            allow_missing=True)
+    output:
+        "{phenotype_untagged}.race_meta_1.tbl"
+    script: os.path.join(config["scriptsdir"], "run_metal.py")
 # variant annotation tasks
 
 use rule hail_base as vep with:

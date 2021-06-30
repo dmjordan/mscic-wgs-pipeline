@@ -9,14 +9,15 @@ registerDoMPI(cl)
 args <- commandArgs(trailingOnly=TRUE)
 file_prefix <- args[[1]]
 endpoint <- args[[2]]
-subset_tag <- if (length(args) > 2) args[[3]] else ""
-exclude_samples <- if (length(args) > 3) as.character(args[4:length(args)]) else character(0)
+race <- args[[3]]
 
+race_filename <- paste(str_to_upper(race), "indiv_list", "txt", sep=".")
+sample.id <- read_tsv(race_filename)[[1]]
 
 read_csv("/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv") %>%
   rename(scanID=X1) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
-sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
+
 
 clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
   append(list("age",
@@ -29,7 +30,7 @@ clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
               "multi_batch",
               "any_comorbidity")) -> non_pc_covars
 
-map(1:10, ~paste0("pc", 1:.x)) %>% prepend(list(character())) -> pcs
+map(1:10, ~paste0(race, "_pc", 1:.x)) %>% prepend(list(character())) -> pcs
 map(1:length(non_pc_covars), ~ combn(non_pc_covars, .x, simplify=FALSE)) %>%
   flatten %>% cross2(pcs) %>% map(unlist) -> all_covar_combinations
 
@@ -66,7 +67,7 @@ map_dbl(succeeded_models, "AIC") %>% compact %>% which.min %>% pluck(succeeded_m
 cat("Best combination among succeeded models:", model$covars, "\n")
 
 
-saveRDS(model, paste(file_prefix, paste0(endpoint, subset_tag), "null", "RDS", sep="."))
+saveRDS(model, paste(file_prefix, paste(endpoint, race, sep="_"), "null", "RDS", sep="."))
 
 closeCluster(cl)
 mpi.quit()

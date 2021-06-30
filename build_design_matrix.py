@@ -219,6 +219,14 @@ def build_design_matrix(covariates_path, design_matrix_path):
 
     clinical_table = clinical_table.join(flowcells, how="inner").join(pca_table,
                                                                       how="inner")  # .join(race, how="inner")
+    for race in "white", "black", "asian", "hispanic":
+        race_pca_table = pd.read_csv(f"625_Samples.cohort.QC_filtered.sample_matched.{race.upper()}_only.PCAir.txt", delim_whitespace=True,
+                                index_col="Subject_ID")
+        race_pca_table.columns = [f"{race}_pc{i}" for i in range(1, len(race_pca_table.columns) + 1)]
+        race_pca_table = race_pca_table.iloc[:, :10]
+
+        clinical_table = clinical_table.join(race_pca_table, how="left")
+
     clinical_table.to_csv(design_matrix_path)
     return {'phenotypes': all_phenotypes}
 
