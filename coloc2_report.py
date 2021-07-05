@@ -13,6 +13,6 @@ for infile in tqdm(snakemake.input):
     table = pd.read_csv(infile, sep="\t")
     table["phenotype"] = phenotype
     table["tissue"] = tissue
-    table = table.loc[(table["PP.H4.abf"] > 0.9) & (table["min.pval.biom"] < 0.05)]
+    table = table.loc[(table["PP.H4.abf"] > 0.2) & (table["min.pval.biom"] < 1e-5)]
     tables.append(table)
 pd.concat(tables).to_csv(snakemake.output[0], sep="\t", header=True, index=False)
