@@ -346,7 +346,7 @@ rule null_model:
         rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     resources:
         cpus=128,
-        mem_mb=16000
+        mem_mb=20000
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
     shell:
