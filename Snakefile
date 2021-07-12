@@ -658,3 +658,27 @@ rule coloc2:
         mem_mb=16000
 
     script: os.path.join(config["scriptsdir"], "do_coloc2.R")
+
+rule coloc2_go_encirhment:
+    input:
+        "coloc2/{phenotype}.{tissue}.full_table.txt"
+    output:
+        "coloc2/{phenotype}.{tissue}.go_results.txt"
+    script:
+        os.path.join(config["scriptsdir"], "coloc2_go_enrichment.R")
+
+rule coloc2_gofigure:
+    input:
+        "coloc2/{phenotype}.{tissue}.go_results.txt"
+    output:
+        directory("coloc2/{phenotype}.{tissue}.GOFigure")
+    shell:
+        r"""python /sc/arion/projects/mscic1/data/GOFigure/GO-Figure/gofigure.py \
+            --input {input[0]} \
+            --input_type standard \
+            --output {output[0]} \
+            --ontology all \
+            --file_type pdf \
+            --outfile_appendix GOFigure_0.5 \
+            --similarity_cutoff 0.5
+        """
