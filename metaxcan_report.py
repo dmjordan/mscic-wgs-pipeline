@@ -20,16 +20,16 @@ for infile in tqdm(snakemake.input):
 
     table["fdr_tissue"] = table["fdr"]
     table["bonferroni_tissue"] = table["bonferroni"]
-    table = table.loc[columns_to_extract]
+    table = table[columns_to_extract]
     tables.append(table)
 
 full_table = pd.concat(tables)
 for phenotype in full_table["phenotype"].unique():
     phenotype_select = (full_table["phenotype"] == phenotype) & (full_table["tissue"] != "Meta")
-    fdr = sm.stats.multipletests(full_table.loc[phenotype_select, "pvalue"], method='fdr_bh')
-    bonferroni = sm.stats.multipletests(full_table.loc[phenotype_select, "pvalue"], method='bonferroni')
-    full_table.loc[full_table["phenotype"] == phenotype, "fdr_phenotype"] = fdr
-    full_table.loc[full_table["phenotype"] == phenotype, "bonferroni_phenotype"] = bonferroni
+    fdr = sm.stats.multipletests(full_table.loc[phenotype_select, "pvalue"], method='fdr_bh')[1]
+    bonferroni = sm.stats.multipletests(full_table.loc[phenotype_select, "pvalue"], method='bonferroni')[1]
+    full_table.loc[phenotype_select, "fdr_phenotype"] = fdr
+    full_table.loc[phenotype_select, "bonferroni_phenotype"] = bonferroni
 
 full_table.to_csv(snakemake.output[0], sep="\t", header=True, index=False)
 

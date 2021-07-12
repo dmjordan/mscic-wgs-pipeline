@@ -277,7 +277,7 @@ use rule hail_base as prune_ld with:
         mt=directory("{prefix}.LD_pruned.mt")
     resources:
         cpus=128,
-        mem_mb=8000
+        mem_mb=16000
     params:
         hail_cmd="ld-prune"
 
