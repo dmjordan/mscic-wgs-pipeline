@@ -694,7 +694,7 @@ rule smultixcan_go_enrichment:
     input:
         "spredixcan_results/eqtl/{model_type}/{phenotype}.smultixcan.txt"
     output:
-        "spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.go_results.txt"
+        "spredixcan_results/eqtl/{model_type}/{phenotype}.smultixcan.go_results.txt"
     params:
         data_type = "smultixcan"
     script:
