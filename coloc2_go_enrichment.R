@@ -1,10 +1,11 @@
-library(tidyverse)
+snakemake@source("rnaseq-gofigure.R")
+#library(tidyverse)
+select = dplyr::select
 
 coloc2_results <- read_tsv(snakemake@input[[1]])
-geneSig <- (coloc2_results$min.pval.biom < 0.05) & (coloc2_results$PP.H4.abf > 0.5)
-names(geneSig) <- coloc2_results$ProbeID
+geneSig <- (coloc2_results$min.pval.biom < 0.05) & (coloc2_results$PP.H4.abf > 0.1)
+names(geneSig) <- str_split_fixed(coloc2_results$ProbeID, fixed("."), n=2)[,1]
 
-snakemake@source("rnaseq-gofigure.R")
 
 res_table <- run_topGO_Fisher(geneSig)
 
