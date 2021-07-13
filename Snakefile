@@ -659,7 +659,7 @@ rule coloc2:
 
     script: os.path.join(config["scriptsdir"], "do_coloc2.R")
 
-rule coloc2_go_encirhment:
+rule coloc2_go_enrichment:
     input:
         "coloc2/{phenotype}.{tissue}.full_table.txt"
     output:

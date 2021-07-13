@@ -30,7 +30,7 @@ suppressPackageStartupMessages({
     # library(org.Hs.eg.db)
     # library(GO.db)
     # library(Rgraphviz)
-    # library(rlang)
+    library(rlang)
     # library(readr)
     # library(openxlsx)
     # library(parallel)
