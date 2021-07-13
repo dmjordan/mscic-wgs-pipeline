@@ -23,8 +23,9 @@ ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob
 
 wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
-    race=r"[A-Z]+",
-    phenotype_untagged=r"[a-z_]+"
+    race=r"WHITE|BLACK|ASIAN|HISPANIC",
+    phenotype_untagged=r"[a-z_]+",
+    tissue="|".join(ALL_TISSUES)
 
 
 # aggregation rules
