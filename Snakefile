@@ -50,9 +50,19 @@ rule metaxcan_eqtl_elastic_net_traits_of_interest:
     input:
         expand("spredixcan_results/eqtl/elastic_net/{phenotype}.smultixcan.txt", phenotype=TRAITS_OF_INTEREST)
 
+rule metaxcan_go_eqtl_elastic_net_traits_of_interest:
+    input:
+        expand("spredixcan_results/eqtl/elastic_net/{phenotype}.{tissue}.GOFigure", phenotype=TRAITS_OF_INTEREST,
+            tissue=ALL_TISSUES + ["smultixcan"])
+
+
 rule coloc2_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
+
+rule coloc2_go_traits_of_interest:
+    input:
+        expand("coloc2/{phenotype}.{tissue}.GOFigure", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
 rule metal_traits_of_interest:
     input:
@@ -664,14 +674,37 @@ rule coloc2_go_enrichment:
         "coloc2/{phenotype}.{tissue}.full_table.txt"
     output:
         "coloc2/{phenotype}.{tissue}.go_results.txt"
+    params:
+        data_type = "coloc2"
     script:
-        os.path.join(config["scriptsdir"], "coloc2_go_enrichment.R")
+        os.path.join(config["scriptsdir"],"run_topGO_enrichment.R")
 
-rule coloc2_gofigure:
+rule spredixcan_go_enrichment:
     input:
-        "coloc2/{phenotype}.{tissue}.go_results.txt"
+        "spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.csv"
     output:
-        directory("coloc2/{phenotype}.{tissue}.GOFigure")
+        "spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.go_results.txt"
+    params:
+        data_type = "spredixcan"
+    script:
+        os.path.join(config["scriptsdir"],"run_topGO_enrichment.R")
+
+rule smultixcan_go_enrichment:
+    input:
+        "spredixcan_results/eqtl/{model_type}/{phenotype}.smultixcan.txt"
+    output:
+        "spredixcan_results/eqtl/{model_type}/{phenotype}.{tissue}.go_results.txt"
+    params:
+        data_type = "smultixcan"
+    script:
+        os.path.join(config["scriptsdir"],"run_topGO_enrichment.R")
+
+
+rule gofigure:
+    input:
+        "{path_prefix}.go_results.txt"
+    output:
+        directory("{path_prefix}.GOFigure")
     shell:
         r"""python /sc/arion/projects/mscic1/data/GOFigure/GO-Figure/gofigure.py \
             --input {input[0]} \
