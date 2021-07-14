@@ -11,7 +11,6 @@ geneSig <- if (snakemake@params[["data_type"]] == "coloc2") {
 }
 ensemblNames <- if (snakemake@params[["data_type"]] == "coloc2") results$ProbeID else results$gene
 names(geneSig) <- str_split_fixed(ensemblNames, fixed("."), n=2)[,1]
-geneSig <- switch(snakemake@params[["data_type"]],
 
 res_table <- run_topGO_Fisher(geneSig)
 
