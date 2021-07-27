@@ -34,7 +34,7 @@ wildcard_constraints:
 rule gwas_traits_of_interest:
     input:
         expand("{phenotype}.GENESIS.{suffix}",
-            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
 rule smmat_lof_traits_of_interest:
     input:
@@ -467,6 +467,18 @@ rule metal_four_races:
     output:
         "{phenotype_untagged}.race_meta_1.tbl"
     script: os.path.join(config["scriptsdir"], "run_metal.py")
+
+
+rule locuszoom_format:
+    input:
+        "{phenotype}.GENESIS.assoc.txt"
+    output:
+        "{phenotype}.GENESIS.assoc.for_locuszoom.txt.bgz"
+    shell: 
+        """ml htslib
+        awk -v OFS='\t' '{print $2, $3, $6, $16, $15, $11, $12, $13}' recovered.GENESIS.assoc.txt | bgzip -c > recovered.GENESIS.assoc.for_locuszoom.txt.bgz
+        """
+
 # variant annotation tasks
 
 use rule hail_base as vep with:
