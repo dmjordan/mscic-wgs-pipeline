@@ -68,9 +68,11 @@ cat(length(all_covar_combinations), "covar combinations tested in", exec_time[["
 cat(length(error_messages), "died with an error;", length(failed_models), "failed to converge;", length(succeeded_models), "succeeded\n")
 cat("error summary:\n")
 print(enframe(error_messages) %>% count(value))
+if (length(succeeded_models) == 0) {
+  stop("no models succeeded")
+}
 map_dbl(succeeded_models, "AIC") %>% compact %>% which.min %>% pluck(succeeded_models, .) -> model
 cat("Best combination among succeeded models:", model$covars, "\n")
-
 
 saveRDS(model, paste(file_prefix, paste0(endpoint, subset_tag), "null", "RDS", sep="."))
 
