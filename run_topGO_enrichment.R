@@ -5,9 +5,9 @@ select = dplyr::select
 results <- read_delim(snakemake@input[[1]],
                       delim = if (snakemake@params[["data_type"]] == "spredixcan") "," else "\t")
 geneSig <- if (snakemake@params[["data_type"]] == "coloc2") {
-  (results$min.pval.biom <= 0.05) & (coloc2_results$PP.H4.abf >= 0.1)
+  (results$min.pval.biom <= 0.05) & (results$PP.H4.abf >= 0.1)
 } else {
-  results$pvalue <= 0.05
+  results$pvalue <= 0.01
 }
 ensemblNames <- if (snakemake@params[["data_type"]] == "coloc2") results$ProbeID else results$gene
 names(geneSig) <- str_split_fixed(ensemblNames, fixed("."), n=2)[,1]
