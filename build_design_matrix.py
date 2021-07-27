@@ -46,8 +46,9 @@ def piecewise_cummax(series):
 
 
 def ever_decreased(series):
-    """Calculates whether the score ever decreased during the series"""
-    return series.pct_change().lt(0).any()
+    """Calculates whether the score ever decreased during the series.
+    Note that this returns positive if it never decreased, so that patients who decreased are "controls" """
+    return series.pct_change().gt(0).all()
 
 
 def ever_increased(series):
@@ -126,6 +127,11 @@ def build_design_matrix(covariates_path, design_matrix_path):
     clinical_table.loc[clinical_table.discharged, "deceased_vs_discharged"] = False
     clinical_table.loc[clinical_table.deceased, "deceased_vs_discharged"] = True
     clinical_table["deceased_vs_discharged"] = clinical_table.deceased_vs_discharged.astype("boolean")
+
+    # invert senses of "recovered" and "discharged" so that cases remain bad
+    clinical_table["recovered"] = ~clinical_table.recovered
+    clinical_table["discharged"] = ~clinical_table.discharged
+    clinical_table["recovered_not_deceased"] = ~clinical_table.recovered_not_deceased
 
     clinical_table.loc[clinical_table.deceased, 'max_who'] = 8
 
