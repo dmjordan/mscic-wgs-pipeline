@@ -92,7 +92,8 @@ rule metaxcan_report_elastic_net_traits_of_interest:
 
 rule hail_base:
     resources:
-        cpus=128
+        cpus=128,
+        mem_mb=16000
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py") 
 
 rule genesis_base:
