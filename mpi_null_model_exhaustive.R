@@ -16,13 +16,12 @@ cat("parsed args:\n")
 cat("file prefix:", file_prefix, fill=TRUE)
 cat("endpoint:", endpoint, fill=TRUE)
 cat("subset:", if (subset_tag == "") "<none>" else subset_tag, fill=TRUE)
-cat("excluded samples:" if (length(exclude_samples) > 0) exclude_samples else "<none>", fill=TRUE)
+cat("excluded samples:", if (length(exclude_samples) > 0) exclude_samples else "<none>", fill=TRUE)
 
 read_csv("/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv") %>%
   rename(scanID=X1) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
 sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
-cat("loaded", length(sample.id), "samples\n")
 
 clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
   append(list("age",
@@ -46,8 +45,12 @@ grm <- pcrelateToMatrix(pcrel_result)
 
 chunkSize <- length(all_covar_combinations) %/% clusterSize(cl)
 
+cat(nrow(scan_annot), "rows in scan annotation df\n")
+cat(length(sample.id), "sample names\n")
+cat(nrow(grm), "rows in loaded GRM\n")
+
 ptm <- proc.time()
-models <- foreach (covars=all_covar_combinations,
+models <- foreach (covars=head(all_covar_combinations, n=100),
          .packages=c("GENESIS", "stringr"),
          .errorhandling="stop",
          .options.mpi=list(chunkSize=chunkSize)) %dopar% {
