@@ -142,13 +142,13 @@ def build_design_matrix(covariates_path, design_matrix_path):
     clinical_table["severity_ever_decreased_counting_discharge"] = clinical_table.severity_ever_decreased | clinical_table.discharged
 
     # invert senses of "recovered," "discharged," and "ever_decreased" so that cases remain bad
-    clinical_table["recovered"] = ~clinical_table.recovered
-    clinical_table["discharged"] = ~clinical_table.discharged
-    clinical_table["recovered_not_deceased"] = ~clinical_table.recovered_not_deceased
-    clinical_table["sofa_ever_decreased"] = ~clinical_table.sofa_ever_decreased
-    clinical_table["who_ever_decreased"] = ~clinical_table.who_ever_decreased
-    clinical_table["severity_ever_decreased"] = ~clinical_table.severity_ever_decreased
-    clinical_table["severity_ever_decreased_counting_discharge"] = ~clinical_table.sofa_ever_decreased_counting_discharge
+    clinical_table["recovered"] = ~(clinical_table.recovered.astype("boolean"))
+    clinical_table["discharged"] = ~(clinical_table.discharged.astype("boolean"))
+    clinical_table["recovered_not_deceased"] = ~(clinical_table.recovered_not_deceased.astype("boolean"))
+    clinical_table["sofa_ever_decreased"] = ~(clinical_table.sofa_ever_decreased.astype("boolean"))
+    clinical_table["who_ever_decreased"] = ~(clinical_table.who_ever_decreased.astype("boolean"))
+    clinical_table["severity_ever_decreased"] = ~(clinical_table.severity_ever_decreased.astype("boolean"))
+    clinical_table["severity_ever_decreased_counting_discharge"] = ~(clinical_table.severity_ever_decreased_counting_discharge.astype("boolean"))
 
     for phenotype in binary_phenotypes:
         clinical_table[phenotype] = clinical_table[phenotype].astype("boolean")

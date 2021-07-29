@@ -12,9 +12,9 @@ SAMPLE_MATCHED_STEM = QC_STEM + ".sample_matched"
 GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
 
-TRAITS_OF_INTEREST = ["max_severity_moderate", # "severity_ever_severe", 
+TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", 
         "severity_ever_eod", "max_who",
-        "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
+        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
 GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
@@ -93,7 +93,7 @@ rule metaxcan_report_elastic_net_traits_of_interest:
 rule hail_base:
     resources:
         cpus=128,
-        mem_mb=16000
+        mem_mb=12000
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py") 
 
 rule genesis_base:
@@ -430,6 +430,8 @@ use rule genesis_base as gwas_plots with:
     output:
         "{phenotype}.GENESIS.qq.png",
         "{phenotype}.GENESIS.manhattan.png"
+    resources:
+        mem_mb="16000"
     params:
         genesis_cmd="gwas_plots"
 
@@ -477,7 +479,7 @@ rule locuszoom_format:
         "{phenotype}.GENESIS.assoc.for_locuszoom.txt.bgz"
     shell: 
         """ml htslib
-        awk -v OFS='\t' '{print $2, $3, $6, $16, $15, $11, $12, $13}' recovered.GENESIS.assoc.txt | bgzip -c > recovered.GENESIS.assoc.for_locuszoom.txt.bgz
+        awk -v OFS='\t' '{{print $2, $3, $6, $16, $15, $11, $12, $13}}' {input[0]} | bgzip -c > {output[0]}
         """
 
 # variant annotation tasks
