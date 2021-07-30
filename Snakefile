@@ -1,3 +1,4 @@
+import itertools
 import os
 from pathlib import Path
 
@@ -6,14 +7,29 @@ COVARIATES_FILE = '/sc/arion/projects/mscic1/data/covariates/clinical_data_deide
 EXOME_BED = "padded_Twist_ComprehensiveExome_targets_hg38.bed"
 DESIGN_MATRIX = "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv"
 
-REGEN_EXOME_PATTERN = "/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/multiallelic.normalized/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.multiallelic.normalized.{chrom}.vcf.gz"
-REGEN_WORKING_DIR = "/sc/private/regen/IPM-general/jordad05/mscic/"
-
 COHORT_STEM = ORIGINAL_VCF.with_suffix('').stem  # because original VCF is .vcf.bgz
 QC_STEM = COHORT_STEM + ".QC_filtered"
 SAMPLE_MATCHED_STEM = QC_STEM + ".sample_matched"
 GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
+
+REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/multiallelic.normalized/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.multiallelic.normalized.{chrom}.vcf.gz")
+REGEN_WORKING_DIR = Path("/sc/private/regen/IPM-general/jordad05/mscic/")
+
+BIOME_STEM = str(REGEN_WORKING_DIR / REGEN_EXOME_PATTERN.with_suffix('').stem)  # because original VCF is .vcf.bgz
+BIOME_SAMPLE_MATCHED_STEM = BIOME_STEM + ".sample_matched"
+BIOME_GWAS_STEM = BIOME_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
+BIOME_LD_STEM = BIOME_GWAS_STEM + ".LD_pruned"
+
+def regeneron_orelse(regen, other):
+    def f(wildcards, input, output):
+        for filename in itertools.chain(input, output):
+            if str(filename).startswith("/sc/private/regen"):
+                return regen
+        else:
+            return other
+    return f
+
 
 TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", 
         "severity_ever_eod", "max_who",
@@ -106,6 +122,21 @@ rule vcf2mt:
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
+rule biome_vcf2mt:
+    input:
+        vcf=REGEN_EXOME_PATTERN
+    output:
+        mt=directory(BIOME_STEM + ".mt")
+    params:
+        pass_output=True,
+        hail_cmd="convert-vcf-to-mt"
+    resources:
+        cpus = 48,
+        mem_mb = 12000,
+        queue = "private",
+        host = "dor01-1"
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
 
 rule mt2plink:
     input:
@@ -115,8 +146,10 @@ rule mt2plink:
     params:
         hail_cmd="convert-mt-to-plink"
     resources:
-        cpus=128,
-        mem_mb=12000
+        cpus=regeneron_orelse(48, 128),
+        mem_mb=12000,
+        queue=regeneron_orelse("premium", "private"),
+        host=regeneron_orelse("dor01-1", None)
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule plink2snpgds:
@@ -126,6 +159,9 @@ rule plink2snpgds:
         gds="{prefix}.snp.gds"
     params:
         genesis_cmd="plink2snpgds"
+    resources:
+        queue=regeneron_orelse("premium","private"),
+        host=regeneron_orelse("dor01-1",None)
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 rule mt2vcfshards:
@@ -137,8 +173,10 @@ rule mt2vcfshards:
     params:
         hail_cmd="convert-mt-to-vcf-shards"
     resources:
-        cpus=128,
-        mem_mb=12000
+        cpus=regeneron_orelse(48,128),
+        mem_mb=12000,
+        queue=regeneron_orelse("premium","private"),
+        host=regeneron_orelse("dor01-1",None)
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule build_vcf:
@@ -146,6 +184,9 @@ rule build_vcf:
         shards_dir="{prefix}.shards.vcf.bgz"
     output:
         vcf="{prefix}.vcf.bgz"
+    resources:
+        queue = regeneron_orelse("premium","private"),
+        host = regeneron_orelse("dor01-1",None)
     shell:
         """
         ml bcftools
@@ -240,6 +281,20 @@ rule pcair_race:
        genesis_cmd="pcair"
    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
+rule biome_pcair:
+    input:
+        gds=f"{BIOME_LD_STEM}.snp.gds",
+        king=f"{BIOME_SAMPLE_MATCHED_STEM}.kin0"
+    output:
+        multiext(f"{BIOME_SAMPLE_MATCHED_STEM}.PCAir",".RDS",".txt")
+    params:
+        output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
+        genesis_cmd="pcair"
+    resources:
+        queue = "private",
+        host = "dor01-1"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+
 rule race_prediction:
     input:
         covariates=COVARIATES_FILE,
@@ -274,6 +329,21 @@ rule pcrelate:
         genesis_cmd="pcrelate",
         prefix=SAMPLE_MATCHED_STEM
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+
+rule biome_pcrelate:
+    input:
+        pcair=f"{BIOME_SAMPLE_MATCHED_STEM}.PCAir.RDS",
+        gds=f"{BIOME_LD_STEM}.snp.gds"
+    output:
+        rds=f"{BIOME_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+    params:
+        genesis_cmd="pcrelate",
+        prefix=BIOME_SAMPLE_MATCHED_STEM
+    resources:
+        queue="private",
+        host="dor01-1"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+
 
 # variant subsets
 
