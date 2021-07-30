@@ -476,10 +476,12 @@ rule locuszoom_format:
     input:
         "{phenotype}.GENESIS.assoc.txt"
     output:
-        "{phenotype}.GENESIS.assoc.for_locuszoom.txt.bgz"
+        multiext("{phenotype}.GENESIS.assoc.for_locuszoom", ".txt.bgz", ".txt.bgz.tbi")
     shell: 
         """ml htslib
-        awk -v OFS='\t' '{{print $2, $3, $6, $16, $15, $11, $12, $13}}' {input[0]} | bgzip -c > {output[0]}
+        awk -v OFS='\t' '(NR == 1) {{print "#CHR", "POS", "FREQ", "REF", "ALT", "PVAL", "BETA", "SE"}} (NR > 1) {{print $2, $3, $6, $16, $15, $11, $12, $13}}' {input[0]} | \\
+        bgzip -c > {output[0]}
+        tabix -s 1 -b 2 -e 2 {output[0]}
         """
 
 # variant annotation tasks
