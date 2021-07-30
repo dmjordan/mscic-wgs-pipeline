@@ -91,20 +91,9 @@ rule metaxcan_report_elastic_net_traits_of_interest:
     script: os.path.join(config["scriptsdir"], "metaxcan_report.py")
 
 
-# utility base tasks
-
-rule hail_base:
-    resources:
-        cpus=128,
-        mem_mb=12000
-    script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py") 
-
-rule genesis_base:
-    script: os.path.join(config["scriptsdir"], "seqarray_genesis.R")
-
 # format conversions
 
-use rule hail_base as vcf2mt with:
+rule vcf2mt:
     input:
         vcf=ORIGINAL_VCF
     output:
@@ -112,24 +101,34 @@ use rule hail_base as vcf2mt with:
     params:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as mt2plink with:
+
+rule mt2plink:
     input:
         mt="{prefix}.mt"
     output:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     params:
         hail_cmd="convert-mt-to-plink"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule genesis_base as plink2snpgds with:
+rule plink2snpgds:
     input:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     output:
         gds="{prefix}.snp.gds"
     params:
         genesis_cmd="plink2snpgds"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
-use rule hail_base as mt2vcfshards with:
+rule mt2vcfshards:
     input:
         mt="{prefix}.mt",
         vcf=ORIGINAL_VCF
@@ -137,6 +136,10 @@ use rule hail_base as mt2vcfshards with:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
     params:
         hail_cmd="convert-mt-to-vcf-shards"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule build_vcf:
     input:
@@ -178,15 +181,19 @@ rule vcf2seqgds_single:
 
 # qc steps
 
-use rule hail_base as qc with:
+rule qc:
     input:
         mt=f"{COHORT_STEM}.mt"
     output:
         mt=directory(f"{QC_STEM}.mt")
     params:
         hail_cmd="run-hail-qc"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as match_samples with:
+rule match_samples:
     input:
         covariates = COVARIATES_FILE,
         mt = f"{QC_STEM}.mt"
@@ -194,6 +201,10 @@ use rule hail_base as match_samples with:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.mt")
     params:
         hail_cmd="match-samples"
+    resources:
+            cpus = 128,
+            mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 # race and ancestry steps
 
@@ -205,9 +216,9 @@ rule king:
     resources:
         cpus=16,
         single_host=1
-    shell: "ml king && king -b {input[0]} --kinship --cpus {threads} --prefix {wildcards.prefix}"
+    shell: "ml king && king -b {input[0]} --kinship --cpus {resources.cpus} --prefix {wildcards.prefix}"
 
-use rule genesis_base as pcair with:
+rule pcair:
     input:
         gds=f"{LD_STEM}.snp.gds",
         king=f"{SAMPLE_MATCHED_STEM}.kin0"
@@ -216,13 +227,18 @@ use rule genesis_base as pcair with:
     params:
         output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
         genesis_cmd="pcair"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
-use rule pcair as pcair_race with:
+rule pcair_race:
    input:
        gds=f"{LD_STEM}.{{race}}_only.snp.gds",
        king=f"{SAMPLE_MATCHED_STEM}.kin0"
    output:
        multiext(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir", ".RDS", ".txt")
+   params:
+       output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
+       genesis_cmd="pcair"
+   script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 rule race_prediction:
     input:
@@ -234,7 +250,7 @@ rule race_prediction:
     script: os.path.join(config["scriptsdir"], "race_prediction.py")
 
 
-use rule hail_base as split_races with:
+rule split_races:
     input:
         mt=f"{SAMPLE_MATCHED_STEM}.mt",
         indiv_list="{race}.indiv_list.txt"
@@ -243,8 +259,12 @@ use rule hail_base as split_races with:
     params:
         hail_cmd="subset-mt-samples",
         pass_output=True
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule genesis_base as pcrelate with:
+rule pcrelate:
     input:
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.RDS",
         gds=f"{LD_STEM}.snp.gds"
@@ -253,26 +273,35 @@ use rule genesis_base as pcrelate with:
     params:
         genesis_cmd="pcrelate",
         prefix=SAMPLE_MATCHED_STEM
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 # variant subsets
 
-use rule hail_base as gwas_filter with:
+rule gwas_filter:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.GWAS_filtered.mt")
     params:
         hail_cmd="gwas-filter"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as rare_filter with:
+rule rare_filter:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.rare_filtered.mt")
     params:
         hail_cmd="rare-filter"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as exome_filter with:
+rule exome_filter:
     input:
         mt="{prefix}.mt",
         bed=EXOME_BED
@@ -284,8 +313,9 @@ use rule hail_base as exome_filter with:
     params:
         hail_cmd="restrict-to-bed",
         pass_output=True
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as prune_ld with:
+rule prune_ld:
     input:
         mt="{prefix}.mt"
     output:
@@ -295,49 +325,68 @@ use rule hail_base as prune_ld with:
         mem_mb=16000
     params:
         hail_cmd="ld-prune"
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as lof_filter with:
+rule lof_filter:
     input:
         mt=f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.LOF_filtered.mt")
     params:
         hail_cmd="filter-lof-hc"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as functional_filter with:
+rule functional_filter:
     input:
         mt=f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt"
     output:
         mt=directory(f"{SAMPLE_MATCHED_STEM}.functional_filtered.mt")
     params:
         hail_cmd="filter-functional-variation"
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as pext_filter with:
+rule pext_filter:
     input:
         mt=f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
     output:
         mt=f"{SAMPLE_MATCHED_STEM}.pext_filtered.mt"
     params:
         hail_cmd="filter-hi-pext"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-
-use rule hail_base as pext_lof_filter with:
+rule pext_lof_filter:
     input:
         mt=f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
     output:
         mt=f"{SAMPLE_MATCHED_STEM}.pext_LOF_filtered.mt"
     params:
         hail_cmd="filter-hi-pext-lof"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-
-use rule hail_base as chrom_split with:
+rule chrom_split:
     input:
         mt="{prefix}.mt"
     output:
         mt=directory("{prefix}.{chrom}.mt")
     params:
         hail_cmd="split-chromosomes",
-        hail_extra_args="{wildcards.chrom}"
+        hail_extra_args="{chrom}"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 # association tests
 
@@ -427,7 +476,7 @@ rule run_gwas:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
         """
 
-use rule genesis_base as gwas_plots with:
+rule gwas_plots:
     input:
         "{phenotype}.GENESIS.assoc.txt"
     output:
@@ -437,6 +486,7 @@ use rule genesis_base as gwas_plots with:
         mem_mb="16000"
     params:
         genesis_cmd="gwas_plots"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 rule run_smmat:
     input:
@@ -489,7 +539,7 @@ rule locuszoom_format:
 
 # variant annotation tasks
 
-use rule hail_base as vep with:
+rule vep:
     input:
         f"{SAMPLE_MATCHED_STEM}.mt",
         "vep/vep_config_script.json"
@@ -497,17 +547,21 @@ use rule hail_base as vep with:
         directory(f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt")
     params:
         hail_cmd="run-vep"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-
-use rule genesis_base as isoform_expression_tsv with:
+rule isoform_expression_tsv:
     input:
         "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/RNASeq_SummarizedExperiment/SummarizedExperiment_Kallisto_Transcripts_RNA_Samples.RDS"
     output:
         "transcript_isoform_tpm_table.tsv"
     params:
         genesis_cmd="isoform_table"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
-use rule hail_base as isoform_expression_ht with:
+rule isoform_expression_ht:
     input:
         "transcript_isoform_tpm_table.tsv"
     output:
@@ -516,8 +570,12 @@ use rule hail_base as isoform_expression_ht with:
     params:
         hail_cmd="transform-tpm-table",
         pass_output=True
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-use rule hail_base as annotate_pext with:
+rule annotate_pext:
     input:
         f"{SAMPLE_MATCHED_STEM}.VEP_annotated.mt",
         "tx_annot.tx_summary.ht",
@@ -526,7 +584,10 @@ use rule hail_base as annotate_pext with:
         f"{SAMPLE_MATCHED_STEM}.pext_annotated.mt"
     params:
         hail_cmd="annotate-pext"
-
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 # downstream analyses
 
@@ -563,13 +624,13 @@ rule ldsc:
         "{phenotype_2}.GENESIS.assoc.sumstats.gz",
         expand(f"{GWAS_STEM}.ld_chr/{{chrom}}.l2.ldscore.gz", chrom=[f"chr{i}" for i in range(1,23)] + ["chrX"])
     output:
-        "{phenotype_1}.{phenotype_2}.assoc.rg.log",
+        "{phenotype_1}.{phenotype_2}.assoc.rg.log"
     resources:
         mem_mb=16000
     shell:
         """
         ml ldsc
-        ldsc.py --rg {output[1]},{output[2]} \ 
+        ldsc.py --rg {input[1]},{input[2]} \ 
                 --ref-ld-chr {GWAS_STEM}.ld_chr/ \
                 --w-ld-chr {GWAS_STEM}.ld_chr/ \
                 --out {wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg"
