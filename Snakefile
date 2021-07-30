@@ -6,6 +6,9 @@ COVARIATES_FILE = '/sc/arion/projects/mscic1/data/covariates/clinical_data_deide
 EXOME_BED = "padded_Twist_ComprehensiveExome_targets_hg38.bed"
 DESIGN_MATRIX = "/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv"
 
+REGEN_EXOME_PATTERN = "/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/multiallelic.normalized/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.multiallelic.normalized.{chrom}.vcf.gz"
+REGEN_WORKING_DIR = "/sc/private/regen/IPM-general/jordad05/mscic/"
+
 COHORT_STEM = ORIGINAL_VCF.with_suffix('').stem  # because original VCF is .vcf.bgz
 QC_STEM = COHORT_STEM + ".QC_filtered"
 SAMPLE_MATCHED_STEM = QC_STEM + ".sample_matched"
