@@ -283,6 +283,17 @@ cli.add_command(click.Command("split-chromosomes", None, split_chromosomes,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
                                click.Argument(["chrom"], type=str)]))
 
+def merge_chromosomes(infiles, outfile):
+    input_mts = []
+    for infile in infiles:
+        mt_path = infile.resolve()
+        mt = hl.read_matrix_table(str(mt_path))
+        input_mts.append(mt)
+    merged_mt = hl.MatrixTable.union_rows(*input_mts)
+    merged_mt.write(str(outfile), overwrite=True)
+cli.add_command(click.Command("merge-chromosomes", None, merge_chromosomes,
+                              [click.Argument(["infiles"], type=ClickPathlibPath(), nargs=-1),
+                               click.Argument("outfile", type=ClickPathlibPath())]))
 
 def restrict_to_bed(mt_path, bed_path, out_mt_path):
     interval_table = hl.import_bed(str(bed_path.resolve()), reference_genome='GRCh38')
