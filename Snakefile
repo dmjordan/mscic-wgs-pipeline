@@ -13,7 +13,7 @@ SAMPLE_MATCHED_STEM = QC_STEM + ".sample_matched"
 GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
 
-REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/multiallelic.normalized/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.multiallelic.normalized.{chrom}.vcf.gz")
+REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.{chrom}.vcf.gz")
 REGEN_WORKING_DIR = Path("/sc/private/regen/IPM-general/jordad05/mscic/")
 
 BIOME_SPLITCHR_STEM = str(REGEN_WORKING_DIR / REGEN_EXOME_PATTERN.with_suffix('').stem)  # because original VCF is .vcf.bgz
@@ -146,7 +146,9 @@ rule biome_vcf2mt:
         mt=directory(BIOME_SPLITCHR_STEM + ".mt")
     params:
         pass_output=True,
-        hail_cmd="convert-vcf-to-mt"
+        hail_cmd="convert-vcf-to-mt",
+        hail_extra_args="--filter-multi"
+
     resources:
         cpus = 48,
         mem_mb = 11500,
