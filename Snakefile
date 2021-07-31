@@ -16,10 +16,15 @@ LD_STEM = GWAS_STEM + ".LD_pruned"
 REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/multiallelic.normalized/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.multiallelic.normalized.{chrom}.vcf.gz")
 REGEN_WORKING_DIR = Path("/sc/private/regen/IPM-general/jordad05/mscic/")
 
+# TODO: figure out where to merge chromosomes
 BIOME_STEM = str(REGEN_WORKING_DIR / REGEN_EXOME_PATTERN.with_suffix('').stem)  # because original VCF is .vcf.bgz
 BIOME_SAMPLE_MATCHED_STEM = BIOME_STEM + ".sample_matched"
 BIOME_GWAS_STEM = BIOME_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 BIOME_LD_STEM = BIOME_GWAS_STEM + ".LD_pruned"
+
+BIOME_CLINICAL_TABLE = REGEN_WORKING_DIR / "clinical_severity_table_regenid.csv"
+EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
+BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
 
 def regeneron_orelse(regen, other):
     def f(wildcards, input, output):
@@ -132,7 +137,7 @@ rule biome_vcf2mt:
         hail_cmd="convert-vcf-to-mt"
     resources:
         cpus = 48,
-        mem_mb = 12000,
+        mem_mb = 11500,
         queue = "private",
         host = "dor01-1"
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -147,7 +152,7 @@ rule mt2plink:
         hail_cmd="convert-mt-to-plink"
     resources:
         cpus=regeneron_orelse(48, 128),
-        mem_mb=12000,
+        mem_mb=11500,
         queue=regeneron_orelse("premium", "private"),
         host=regeneron_orelse("dor01-1", None)
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -174,7 +179,7 @@ rule mt2vcfshards:
         hail_cmd="convert-mt-to-vcf-shards"
     resources:
         cpus=regeneron_orelse(48,128),
-        mem_mb=12000,
+        mem_mb=11500,
         queue=regeneron_orelse("premium","private"),
         host=regeneron_orelse("dor01-1",None)
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -243,9 +248,38 @@ rule match_samples:
     params:
         hail_cmd="match-samples"
     resources:
-            cpus = 128,
-            mem_mb = 12000
+        cpus = 128,
+        mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+rule biome_sample_list:
+    input:
+        BIOME_CLINICAL_TABLE, EXCLUDED_REGENIDS_TABLE
+    output:
+        os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
+    resources:
+        queue="private",
+        host="dor01-1"
+    script: """comm -23 <(cut -d, -f1 {input[0]} | sort | uniq) \\
+                    <(sort {input[1]}) \\
+                    | awk 'NR == 1 {{print "Subject_ID"}} NR > 1 {{print}}' > {output[0]}"""
+
+rule biome_match_samples:
+    input:
+        mt = f"{BIOME_STEM}.mt",
+        indiv_llist = os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
+    output:
+        mt=directory(f"{BIOME_SAMPLE_MATCHED_STEM}.mt")
+    params:
+        hail_cmd="subset-mt-samples",
+        pass_output=True
+    resources:
+            cpus = 48,
+            mem_mb = 11500,
+            queue="private",
+            host="dor01-1"
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
 
 # race and ancestry steps
 
@@ -355,8 +389,10 @@ rule gwas_filter:
     params:
         hail_cmd="gwas-filter"
     resources:
-        cpus=128,
-        mem_mb=12000
+        cpus=regeneron_orelse(48, 128),
+        mem_mb=11500,
+        queue=regeneron_orelse("private", "premium"),
+        host=regeneron_orelse("dor01-1", None)
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule rare_filter:
@@ -391,8 +427,10 @@ rule prune_ld:
     output:
         mt=directory("{prefix}.LD_pruned.mt")
     resources:
-        cpus=128,
-        mem_mb=16000
+        cpus = regeneron_orelse(32,128),
+        mem_mb = 16000,
+        queue = regeneron_orelse("private","premium"),
+        host = regeneron_orelse("dor01-1",None)
     params:
         hail_cmd="ld-prune"
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -472,6 +510,20 @@ rule design_matrix:
     script:
         os.path.join(config["scriptsdir"], "build_design_matrix.py")
 
+rule biome_design_matrix:
+    input:
+        table=BIOME_CLINICAL_TABLE,
+        excluded_ids=EXCLUDED_REGENIDS_TABLE,
+        pcair=f"{BIOME_SAMPLE_MATCHED_STEM}.PCAir.txt"
+    output:
+        BIOME_DESIGN_MATRIX
+    resources:
+        queue="private",
+        host="dor01-1"
+    script:
+        os.path.join(config["scriptsdir"], "build_biome_design_matrix.py")
+    #TODO: Write this script
+
 rule null_model:
     input:
         DESIGN_MATRIX,
@@ -488,6 +540,26 @@ rule null_model:
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
+
+rule biome_null_model:
+    input:
+        BIOME_DESIGN_MATRIX,
+        rds=f"{BIOME_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+    output:
+        rds=f"{BIOME_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+    resources:
+        cpus=24,
+        mem_mb=20000,
+        queue="private",
+        host="dor01-1"
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        """
+
 
 rule null_model_race:
     input:
@@ -544,6 +616,25 @@ rule run_gwas:
         """
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
+        """
+
+rule run_biome_gwas:
+    input:
+        gds=f"{BIOME_GWAS_STEM}.shards.seq.gds",
+        null_nodel=f"{BIOME_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+    output:
+        txt="biome_{phenotype_untagged}.GENESIS.assoc.txt"
+    resources:
+        cpus=48,
+        mem_mb=11500,
+        queue="private",
+        host="dor01-1"
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SAMPLE_MATCHED_STEM} biome_{wildcards.phenotype_untagged}
         """
 
 rule gwas_plots:
