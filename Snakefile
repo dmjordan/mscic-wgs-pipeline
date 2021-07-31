@@ -16,11 +16,14 @@ LD_STEM = GWAS_STEM + ".LD_pruned"
 REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/multiallelic.normalized/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.multiallelic.normalized.{chrom}.vcf.gz")
 REGEN_WORKING_DIR = Path("/sc/private/regen/IPM-general/jordad05/mscic/")
 
-# TODO: figure out where to merge chromosomes
-BIOME_STEM = str(REGEN_WORKING_DIR / REGEN_EXOME_PATTERN.with_suffix('').stem)  # because original VCF is .vcf.bgz
-BIOME_SAMPLE_MATCHED_STEM = BIOME_STEM + ".sample_matched"
-BIOME_GWAS_STEM = BIOME_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
-BIOME_LD_STEM = BIOME_GWAS_STEM + ".LD_pruned"
+BIOME_SPLITCHR_STEM = str(REGEN_WORKING_DIR / REGEN_EXOME_PATTERN.with_suffix('').stem)  # because original VCF is .vcf.bgz
+BIOME_SPLITCHR_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_STEM + ".sample_matched"
+BIOME_SPLITCHR_GWAS_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
+BIOME_SPLITCHR_LD_STEM = BIOME_SPLITCHR_GWAS_STEM + ".LD_pruned"
+
+BIOME_CHRALL_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '') + ".chrall"
+BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_STEM.replace('.{chrom}', '') + ".chrall"
+BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '') + ".chrall"
 
 BIOME_CLINICAL_TABLE = REGEN_WORKING_DIR / "clinical_severity_table_regenid.csv"
 EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
@@ -41,6 +44,10 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe",
         "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
+BIOME_TRAITS = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod",
+                "max_who", "severity_ever_increased", "severity_ever_decreased",
+                "who_ever_increased", "who_ever_decreased", "covid_encounter_days_log"]
+
 GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
 MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
 ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
@@ -60,11 +67,16 @@ rule gwas_traits_of_interest:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
+rule biome_gwas_traits_of_interest:
+    input:
+        expand("biome_{phenotype}.GENESIS.{suffix}",
+            phenotype=BIOME_TRAITS, suffix=["assoc.txt", "qq.png", "manhattan.png"])
+
+
 rule smmat_lof_traits_of_interest:
     input:
         expand("{phenotype}.LOF.GENESIS.SMMAT.assoc.txt",
             phenotype=TRAITS_OF_INTEREST)
-
 
 rule metaxcan_eqtl_mashr_traits_of_interest:
     input:
@@ -131,7 +143,7 @@ rule biome_vcf2mt:
     input:
         vcf=REGEN_EXOME_PATTERN
     output:
-        mt=directory(BIOME_STEM + ".mt")
+        mt=directory(BIOME_SPLITCHR_STEM + ".mt")
     params:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt"
@@ -266,10 +278,10 @@ rule biome_sample_list:
 
 rule biome_match_samples:
     input:
-        mt = f"{BIOME_STEM}.mt",
+        mt = f"{BIOME_SPLITCHR_STEM}.mt",
         indiv_llist = os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
     output:
-        mt=directory(f"{BIOME_SAMPLE_MATCHED_STEM}.mt")
+        mt=directory(f"{BIOME_SPLITCHR_SAMPLE_MATCHED_STEM}.mt")
     params:
         hail_cmd="subset-mt-samples",
         pass_output=True
@@ -317,10 +329,10 @@ rule pcair_race:
 
 rule biome_pcair:
     input:
-        gds=f"{BIOME_LD_STEM}.snp.gds",
-        king=f"{BIOME_SAMPLE_MATCHED_STEM}.kin0"
+        gds=f"{BIOME_CHRALL_LD_STEM}.snp.gds",
+        king=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.kin0"
     output:
-        multiext(f"{BIOME_SAMPLE_MATCHED_STEM}.PCAir",".RDS",".txt")
+        multiext(f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir",".RDS",".txt")
     params:
         output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
         genesis_cmd="pcair"
@@ -366,13 +378,13 @@ rule pcrelate:
 
 rule biome_pcrelate:
     input:
-        pcair=f"{BIOME_SAMPLE_MATCHED_STEM}.PCAir.RDS",
-        gds=f"{BIOME_LD_STEM}.snp.gds"
+        pcair=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.RDS",
+        gds=f"{BIOME_CHRALL_LD_STEM}.snp.gds"
     output:
-        rds=f"{BIOME_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+        rds=f"{BIOME_SPLITCHR_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     params:
         genesis_cmd="pcrelate",
-        prefix=BIOME_SAMPLE_MATCHED_STEM
+        prefix=BIOME_SPLITCHR_SAMPLE_MATCHED_STEM
     resources:
         queue="private",
         host="dor01-1"
@@ -496,6 +508,22 @@ rule chrom_split:
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
+rule chrom_merge:
+    input:
+        expand("{prefix}{chrom}{suffix}.mt", chrom=list(range(1,23)) + ["X"], allow_missing=True)
+    output:
+        "{prefix}{suffix}.chrall.mt"
+    resources:
+        cpus = regeneron_orelse(48, 128),
+        mem_mb = 11500,
+        queue = regeneron_orelse("private", "premium"),
+        host = regeneron_orelse("dor01-1", None)
+    params:
+        hail_cmd="merge-chromosomes",
+        pass_output=True
+    script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
+
+
 # association tests
 
 rule design_matrix:
@@ -514,7 +542,7 @@ rule biome_design_matrix:
     input:
         table=BIOME_CLINICAL_TABLE,
         excluded_ids=EXCLUDED_REGENIDS_TABLE,
-        pcair=f"{BIOME_SAMPLE_MATCHED_STEM}.PCAir.txt"
+        pcair=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.txt"
     output:
         BIOME_DESIGN_MATRIX
     resources:
@@ -544,9 +572,9 @@ rule null_model:
 rule biome_null_model:
     input:
         BIOME_DESIGN_MATRIX,
-        rds=f"{BIOME_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{BIOME_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     resources:
         cpus=24,
         mem_mb=20000,
@@ -557,7 +585,7 @@ rule biome_null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SPLITCHR_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
 
@@ -620,8 +648,8 @@ rule run_gwas:
 
 rule run_biome_gwas:
     input:
-        gds=f"{BIOME_GWAS_STEM}.shards.seq.gds",
-        null_nodel=f"{BIOME_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+        gds=f"{BIOME_CHRALL_GWAS_STEM}.shards.seq.gds",
+        null_nodel=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     output:
         txt="biome_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:
@@ -634,7 +662,7 @@ rule run_biome_gwas:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SAMPLE_MATCHED_STEM} biome_{wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SPLITCHR_SAMPLE_MATCHED_STEM} biome_{wildcards.phenotype_untagged}
         """
 
 rule gwas_plots:
