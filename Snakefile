@@ -21,17 +21,17 @@ BIOME_SPLITCHR_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_STEM + ".sample_matched"
 BIOME_SPLITCHR_GWAS_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 BIOME_SPLITCHR_LD_STEM = BIOME_SPLITCHR_GWAS_STEM + ".LD_pruned"
 
-BIOME_CHRALL_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '') + ".chrall"
-BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_STEM.replace('.{chrom}', '') + ".chrall"
-BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '') + ".chrall"
+BIOME_CHRALL_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '.chrall')
+BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
+BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
 
 BIOME_CLINICAL_TABLE = REGEN_WORKING_DIR / "clinical_severity_table_regenid.csv"
 EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
 BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
 
 def regeneron_orelse(regen, other):
-    def f(wildcards, input, output):
-        for filename in itertools.chain(input, output):
+    def f(wildcards, input):
+        for filename in input:
             if str(filename).startswith("/sc/private/regen"):
                 return regen
         else:
@@ -69,7 +69,7 @@ rule gwas_traits_of_interest:
 
 rule biome_gwas_traits_of_interest:
     input:
-        expand("biome_{phenotype}.GENESIS.{suffix}",
+        expand("BIOME_{phenotype}.GENESIS.{suffix}",
             phenotype=BIOME_TRAITS, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
 
@@ -381,7 +381,7 @@ rule biome_pcrelate:
         pcair=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.RDS",
         gds=f"{BIOME_CHRALL_LD_STEM}.snp.gds"
     output:
-        rds=f"{BIOME_SPLITCHR_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     params:
         genesis_cmd="pcrelate",
         prefix=BIOME_SPLITCHR_SAMPLE_MATCHED_STEM
@@ -510,9 +510,9 @@ rule chrom_split:
 
 rule chrom_merge:
     input:
-        expand("{prefix}{chrom}{suffix}.mt", chrom=list(range(1,23)) + ["X"], allow_missing=True)
+        expand("{prefix}.chr{chrom}.{suffix}.mt", chrom=list(range(1,23)) + ["X"], allow_missing=True)
     output:
-        "{prefix}{suffix}.chrall.mt"
+        "{prefix}.chrall.{suffix}.mt"
     resources:
         cpus = regeneron_orelse(48, 128),
         mem_mb = 11500,
@@ -522,6 +522,10 @@ rule chrom_merge:
         hail_cmd="merge-chromosomes",
         pass_output=True
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
+
+ruleorder: chrom_merge > biome_match_samples
+ruleorder: chrom_merge > gwas_filter
+ruleorder: chrom_merge > prune_ld
 
 
 # association tests
@@ -651,7 +655,7 @@ rule run_biome_gwas:
         gds=f"{BIOME_CHRALL_GWAS_STEM}.shards.seq.gds",
         null_nodel=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     output:
-        txt="biome_{phenotype_untagged}.GENESIS.assoc.txt"
+        txt="BIOME_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:
         cpus=48,
         mem_mb=11500,
