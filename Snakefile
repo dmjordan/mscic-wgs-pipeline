@@ -554,7 +554,6 @@ rule biome_design_matrix:
         host="dor01-1"
     script:
         os.path.join(config["scriptsdir"], "build_biome_design_matrix.py")
-    #TODO: Write this script
 
 rule null_model:
     input:
