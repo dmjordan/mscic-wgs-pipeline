@@ -26,6 +26,7 @@ BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
 
 BIOME_GSA_VCF = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_vcf/GSA_chr_all.vcf.gz")
+BIOME_GSA_BGEN = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_bgen8bit/GSA_chr_all.bgen")
 BIOME_GSA_STEM = str(REGEN_WORKING_DIR / BIOME_GSA_VCF.with_suffix('').stem)  # because original VCF is .vcf.bgz
 BIOME_GSA_SAMPLE_MATCHED_STEM = BIOME_GSA_STEM + ".sample_matched"
 BIOME_GSA_GWAS_STEM = BIOME_GSA_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
@@ -156,15 +157,16 @@ rule biome_vcf2mt:
         mem_mb = 11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-rule biome_gsa_vcf2mt:
+
+rule biome_gsa_bgen2mt:
     input:
-        vcf=BIOME_GSA_VCF
+        bgen=BIOME_GSA_BGEN,
+        sample=BIOME_GSA_BGEN.with_name("GSA_Regeneron_ID.sample")
     output:
         mt=directory(BIOME_GSA_STEM + ".mt")
     params:
         pass_output=True,
-        hail_cmd="convert-vcf-to-mt",
-        hail_extra_args="--hg19 --filter-multi"
+        hail_cmd="convert-bgen-to-mt",
     resources:
         cpus = 128,
         mem_mb = 11500

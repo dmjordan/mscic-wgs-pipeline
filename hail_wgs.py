@@ -79,6 +79,15 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False, hg19=False):
     vcf.write(str(mt_path.resolve()), overwrite=True)
 
 
+@cli.command("convert-bgen-to-mt")
+@click.argument("bgen_path", type=ClickPathlibPath())
+@click.argument("sample_path", type=ClickPathlibPath())
+@click.argument("mt_path", type=ClickPathlibPath())
+def convert_bgen_to_mt(bgen_path, sample_path, mt_path):
+    mt = hl.import_bgen(str(bgen_path), entry_fields=["GT", "dosage"], sample_file=str(sample_path))
+    mt.write(str(mt_path), overwrite=True)
+
+
 @cli.command("run-hail-qc")
 @click.argument("mt_path", type=ClickPathlibPath())
 def run_hail_qc(mt_path):
