@@ -50,7 +50,7 @@ cat(length(sample.id), "sample names\n")
 cat(nrow(grm), "rows in loaded GRM\n")
 
 ptm <- proc.time()
-models <- foreach (covars=head(all_covar_combinations, n=100),
+models <- foreach (covars=all_covar_combinations,
          .packages=c("GENESIS", "stringr"),
          .errorhandling="stop",
          .options.mpi=list(chunkSize=chunkSize)) %dopar% {

@@ -18,8 +18,8 @@ cat("endpoint:", endpoint, fill=TRUE)
 cat("subset:", if (subset_tag == "") "<none>" else subset_tag, fill=TRUE)
 cat("excluded samples:", if (length(exclude_samples) > 0) exclude_samples else "<none>", fill=TRUE)
 
-read_csv("/sc//sc/private/regen/IPM-general/jordad05/mscic/regenid_dmatrix.csv") %>%
-  rename(scanID=X1) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
+read_csv("/sc/private/regen/IPM-general/jordad05/mscic/regenid_dmatrix.csv") %>%
+  rename(scanID=X1) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
 sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
 
@@ -45,7 +45,7 @@ cat(length(sample.id), "sample names\n")
 cat(nrow(grm), "rows in loaded GRM\n")
 
 ptm <- proc.time()
-models <- foreach (covars=head(all_covar_combinations, n=100),
+models <- foreach (covars=all_covar_combinations,
          .packages=c("GENESIS", "stringr"),
          .errorhandling="stop",
          .options.mpi=list(chunkSize=chunkSize)) %dopar% {
@@ -72,7 +72,7 @@ if (length(succeeded_models) == 0) {
 map_dbl(succeeded_models, "AIC") %>% compact %>% which.min %>% pluck(succeeded_models, .) -> model
 cat("Best combination among succeeded models:", model$covars, "\n")
 
-saveRDS(model, paste(file_prefix, paste0(endpoint, subset_tag), "null", "RDS", sep="."))
+saveRDS(model, paste(file_prefix, paste0("BIOME_", endpoint, subset_tag), "null", "RDS", sep="."))
 
 closeCluster(cl)
 mpi.quit()

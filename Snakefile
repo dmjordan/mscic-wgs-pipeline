@@ -538,7 +538,7 @@ rule biome_null_model:
         BIOME_DESIGN_MATRIX,
         rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
     resources:
         cpus=128,
         mem_mb=20000
@@ -611,7 +611,7 @@ rule run_gwas:
 rule run_biome_gwas:
     input:
         gds=f"{BIOME_CHRALL_GWAS_STEM}.shards.seq.gds",
-        null_nodel=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+        null_nodel=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
     output:
         txt="BIOME_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:
@@ -622,7 +622,7 @@ rule run_biome_gwas:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SPLITCHR_SAMPLE_MATCHED_STEM} biome_{wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_CHRALL_SAMPLE_MATCHED_STEM} BIOME_{wildcards.phenotype_untagged}
         """
 
 ruleorder: run_biome_gwas > run_gwas
