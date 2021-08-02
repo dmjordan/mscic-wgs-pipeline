@@ -10,8 +10,8 @@ if typing.TYPE_CHECKING:
 new_env_variables = {
     'HAIL_HOME': os.path.join(sysconfig.get_path("purelib"), "hail"),
     "SPARK_LOCAL_DIRS": "/local/tmp",
-    "SPARK_LOG_DIR": "/sc/arion/projects/mscic1/scratch/hail/logs/",
-    "SPARK_WORKER_DIR": "/sc/arion/projects/mscic1/scratch/hail/worker/",
+    "SPARK_LOG_DIR": "/sc/arion/scratch/jordad05/hail/logs/",
+    "SPARK_WORKER_DIR": "/sc/arion/projects/mscic1/scratch/jordad05/hail/worker/",
     "LD_PRELOAD": "/usr/lib64/libgslcblas.so"
 }
 

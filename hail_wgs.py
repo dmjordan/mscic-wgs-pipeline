@@ -12,7 +12,7 @@ import tx_annotation
 #cli = click.Group("hail-wgs")
 @click.group("hail-wgs")
 def cli():
-    tmp_path = "/sc/arion/projects/mscic1/scratch/hail/tmp/"
+    tmp_path = "/sc/arion/scratch/hail/tmp/"
     hl.init(tmp_dir=tmp_path, min_block_size=128, local_tmpdir="/local/tmp/",
                 log=hl.utils.timestamp_path(os.path.join(os.environ["SPARK_LOG_DIR"], 'hail')))
 
@@ -21,17 +21,6 @@ def cli():
 class ClickPathlibPath(click.Path):
     def coerce_path_result(self, rv):
         return Path(super().coerce_path_result(rv))
-
-
-def start_hail(spark_master):
-    tmp_path = Path("/sc/arion/projects/mscic1/scratch/hail/tmp/").resolve()
-    hl.init(master=spark_master, tmp_dir=str(tmp_path), min_block_size=128,
-            spark_conf={'spark.driver.extraClassPath': f"{os.environ['HAIL_HOME']}/backend/hail-all-spark.jar",
-                        'spark.executor.extraClassPath': f"{os.environ['HAIL_HOME']}/backend/hail-all-spark.jar",
-                        'spark.serializer': "org.apache.spark.serializer.KryoSerializer",
-                        'spark.kryo.registrator': "is.hail.kryo.HailKryoRegistrator",
-                        'spark.driver.memory': '20G',
-                        'spark.executor.memory': '20G'})
 
 
 def split_vcf_G_field_min(expr, a_index):
