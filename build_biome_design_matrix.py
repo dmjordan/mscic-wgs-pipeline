@@ -17,7 +17,7 @@ def ever_increased(series):
     """Calculates whether the score ever increased during the series"""
     return series.pct_change().gt(0).any()
 
-raw_table = pd.read_csv(snakemake.inputs.table, parse_dates=["Encounter_Start_Date", "Encounter_End_Date"],
+raw_table = pd.read_csv(snakemake.input.table, parse_dates=["Encounter_Start_Date", "Encounter_End_Date"],
                         dtype = { 'Severity': pd.api.types.CategoricalDtype(['Moderate COVID-19',
                                                                                                'Severe COVID-19',
                                                                                                'Severe COVID-19 with EOD'],
@@ -53,7 +53,7 @@ clinical_table["sex"] = clinical_table.sex.str.get(0)
 clinical_table["age_sex"] = clinical_table["age"] * (clinical_table["sex"] == "F")
 clinical_table["age_squared"] = clinical_table["age"] ** 2
 
-excluded_samples = pd.read_csv(snakemake.output.excluded_ids)
+excluded_samples = pd.read_csv(snakemake.input.excluded_ids)
 clinical_table = clinical_table.drop(clinical_table.index.intersection(excluded_samples))
 
 pca_table = pd.read_csv(snakemake.input.pcair, delim_whitespace=True,

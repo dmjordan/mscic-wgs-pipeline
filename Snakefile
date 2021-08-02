@@ -46,7 +46,8 @@ wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
     race=r"WHITE|BLACK|ASIAN|HISPANIC",
     phenotype_untagged=r"[a-z_]+",
-    tissue="|".join(ALL_TISSUES)
+    tissue="|".join(ALL_TISSUES),
+    prefix=".*(?<!shards)"
 
 
 # aggregation rules
@@ -169,7 +170,7 @@ rule plink2snpgds:
 rule mt2vcfshards:
     input:
         mt="{prefix}.mt",
-        vcf=lambda wildcards: REGEN_EXOME_PATTERN.format(chrom="chr21") if Path(wildcards.prefix).stem.startswith("SINAI") else ORIGINAL_VCF
+        vcf=lambda wildcards: str(REGEN_EXOME_PATTERN).format(chrom="chr21") if Path(wildcards.prefix).stem.startswith("SINAI") else ORIGINAL_VCF
     output:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
     params:
@@ -298,7 +299,7 @@ rule pcair_race:
    output:
        multiext(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir", ".RDS", ".txt")
    params:
-       output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
+       output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
        genesis_cmd="pcair"
    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
@@ -309,7 +310,7 @@ rule biome_pcair:
     output:
         multiext(f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir",".RDS",".txt")
     params:
-        output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
+        output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
         genesis_cmd="pcair"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
@@ -356,7 +357,7 @@ rule biome_pcrelate:
         rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     params:
         genesis_cmd="pcrelate",
-        prefix=BIOME_SPLITCHR_SAMPLE_MATCHED_STEM
+        prefix=BIOME_CHRALL_SAMPLE_MATCHED_STEM
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 
@@ -539,14 +540,14 @@ rule biome_null_model:
     output:
         rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     resources:
-        cpus=64,
+        cpus=128,
         mem_mb=20000
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SPLITCHR_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
 
@@ -623,6 +624,8 @@ rule run_biome_gwas:
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_SPLITCHR_SAMPLE_MATCHED_STEM} biome_{wildcards.phenotype_untagged}
         """
+
+ruleorder: run_biome_gwas > run_gwas
 
 rule gwas_plots:
     input:

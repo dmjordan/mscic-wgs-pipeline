@@ -59,8 +59,7 @@ build_snp_gds <- function(prefix) {
     1
 }
 
-run_pcair <- function(gdsfile, out_prefix) { 
-    kingfile <- "625_Samples.cohort.QC_filtered.sample_matched.kin0"
+run_pcair <- function(gdsfile, kingfile, out_prefix) { 
     rdsfile <- paste(out_prefix, "PCAir", "RDS", sep=".")
     txtfile <- paste(out_prefix, "PCAir", "txt", sep=".")
 
@@ -78,21 +77,21 @@ run_pcair <- function(gdsfile, out_prefix) {
     pc_table <- as_tibble(pcair_result$vectors)
     pc_table %>% rename_all(~ str_replace(.x, 'V', 'PC')) %>% 
                  add_column(Subject_ID=pcair_result$sample.id, .before=1) -> pc_table
-    clinical_covariates <- readRDS("../../data/covariates/clinical_data_deidentified_allsamples/Biobank_clinical_data_table_by_blood_sample_deidentified_UNCONSENTED.RDS")
-    clinical_covariates %>% group_by(Subject_ID) %>% 
-                            summarise(Race_From_Consent=unique(Race_From_Consent),
-                                      Ethnicity_From_Consent=unique(Ethnicity_From_Consent)) -> race_table
-    pc_table <- left_join(x=pc_table, y=race_table, by="Subject_ID")
-    for (pc1 in 1:9) {
-        for (pc2 in pc1:10) {
-            pdf(paste(out_prefix, ".PC", pc1, "v", pc2, ".pdf", sep=""))
-            ggplot(pc_table, aes_string(x=paste("PC", pc1, sep=""), 
-                                   y=paste("PC", pc2, sep=""),
-                                   color="Race_From_Consent"),
-                                   shape="Ethnicity_From_Consent") + geom_point()
-            dev.off()
-        }
-    }
+    #clinical_covariates <- readRDS("../../data/covariates/clinical_data_deidentified_allsamples/Biobank_clinical_data_table_by_blood_sample_deidentified_UNCONSENTED.RDS")
+    #clinical_covariates %>% group_by(Subject_ID) %>% 
+    #                        summarise(Race_From_Consent=unique(Race_From_Consent),
+    #                                  Ethnicity_From_Consent=unique(Ethnicity_From_Consent)) -> race_table
+    #pc_table <- left_join(x=pc_table, y=race_table, by="Subject_ID")
+    #for (pc1 in 1:9) {
+    #    for (pc2 in pc1:10) {
+    #        pdf(paste(out_prefix, ".PC", pc1, "v", pc2, ".pdf", sep=""))
+    #        ggplot(pc_table, aes_string(x=paste("PC", pc1, sep=""), 
+    #                               y=paste("PC", pc2, sep=""),
+    #                               color="Race_From_Consent"),
+    #                               shape="Ethnicity_From_Consent") + geom_point()
+    #        dev.off()
+    #    }
+    #}
 
     saveRDS(pcair_result, file=rdsfile)
     pc_table %>% select(c(Subject_ID, starts_with("PC"))) %>% write_delim(path=txtfile)
@@ -338,7 +337,7 @@ if (exists("snakemake")) {
     switch(
         snakemake@params[["genesis_cmd"]],
         plink2snpgds=build_snp_gds(snakemake@wildcards[["prefix"]]),
-        pcair=run_pcair(snakemake@input[["gds"]], snakemake@params[["output_stem"]]),
+        pcair=run_pcair(snakemake@input[["gds"]], snakemake@input[["king"]], snakemake@params[["output_stem"]]),
         pcrelate=run_pcrelate(snakemake@params[["prefix"]]),
         gwas_plots=make_gwas_plots(snakemake@wildcards[["phenotype"]]),
         isoform_table=make_isoform_tpms_table(snakemake@input[[1]], snakemake@output[[1]])
