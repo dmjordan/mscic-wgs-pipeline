@@ -9,7 +9,6 @@ from bokeh.io import export_png
 
 import tx_annotation
 
-#cli = click.Group("hail-wgs")
 @click.group("hail-wgs")
 def cli():
     hl.init(tmp_dir=os.environ["TMPDIR"], min_block_size=128, local_tmpdir="/local/tmp/",
@@ -46,6 +45,11 @@ def split_vcf_R_field_sum(expr, a_index):
                          [hl.sum(expr) - expr[a_index], expr[a_index]])
 
 
+@cli.command("convert-vcf-to-mt")
+@click.argument("vcf_path", type=ClickPathlibPath())
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.option("--filter-multi/--allow-multi", default=False)
+@click.option("--hg19/--hg38", default=False)
 def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False, hg19=False):
     vcf = hl.import_vcf(str(vcf_path.resolve()),
                         force_bgz=True, 
@@ -73,12 +77,10 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False, hg19=False):
         vcf = vcf.annotate_rows(info=new_info)
 
     vcf.write(str(mt_path.resolve()), overwrite=True)
-cli.add_command(click.Command("convert-vcf-to-mt", None, convert_vcf_to_mt,
-                              [click.Argument(["vcf_path"], type=ClickPathlibPath()),
-                               click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Option(["--filter-multi/--allow-multi"], default=False),
-                               click.Option(["--hg19/--hg38"], default=False)]))
 
+
+@cli.command("run-hail-qc")
+@click.argument("mt_path", type=ClickPathlibPath())
 def run_hail_qc(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
@@ -109,10 +111,11 @@ def run_hail_qc(mt_path):
     mt_filtered = mt_filtered.filter_rows((mt_filtered.variant_qc.dp_stats.mean > 25) & (mt_filtered.variant_qc.call_rate > 0.9) & (mt_filtered.variant_qc.gq_stats.mean > 40))
     print('After applying sample and variant QC, {0}/{1} variants remain.'.format(mt_filtered.count_rows(), mt.count_rows()), file=sys.stderr)
     mt_filtered.write(str(mt_path.with_suffix(".QC_filtered.mt")), overwrite=True)
-cli.add_command(click.Command("run-hail-qc", None, run_hail_qc,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("match-samples")
+@click.argument("covariates_path", type=ClickPathlibPath())
+@click.argument("mt_path", type=ClickPathlibPath())
 def match_samples(covariates_path, mt_path):
     mt_path = mt_path.resolve()
     covariates_path = covariates_path.resolve()
@@ -149,41 +152,41 @@ def match_samples(covariates_path, mt_path):
         (~sex_table.is_female & (sex_table.reported.sex != "Male")))
     mt = mt.anti_join_cols(mismatched_sex)
     mt.write(str(output_path), overwrite=True)
-cli.add_command(click.Command("match-samples", None, match_samples,
-                              [click.Argument(["covariates_path"], type=ClickPathlibPath()),
-                               click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("gwas-filter")
+@click.argument("mt_path", type=ClickPathlibPath())
 def gwas_filter(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.variant_qc(mt)
     mt = mt.filter_rows(mt.variant_qc.AF.all(lambda af: af > 0.01) & (mt.variant_qc.p_value_hwe > 1e-6))
     mt.write(str(mt_path.with_suffix(".GWAS_filtered.mt")), overwrite=True)
-cli.add_command(click.Command("gwas-filter", None, gwas_filter,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("rare-filter")
+@click.argument("mt_path", type=ClickPathlibPath())
 def rare_filter(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.variant_qc(mt)
     mt = mt.filter_rows(mt.variant_qc.AC.any(lambda ac: ac == 1))
     mt.write(str(mt_path.with_suffix(".rare_filtered.mt")), overwrite=True)
-cli.add_command(click.Command("rare-filter", None, rare_filter,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("ld-prune")
+@click.argument("mt_path", type=ClickPathlibPath())
 def ld_prune(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     pruned_variant_table = hl.ld_prune(mt.GT, r2=0.2, bp_window_size=500000)
     mt = mt.filter_rows(hl.is_defined(pruned_variant_table[mt.row_key]))
     mt.write(str(mt_path.with_suffix(".LD_pruned.mt")), overwrite=True)
-cli.add_command(click.Command("ld-prune", None, ld_prune,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("convert-mt-to-vcf-shards")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("original_vcf_path", type=ClickPathlibPath())
 def convert_mt_to_vcf_shards(mt_path, original_vcf_path):
     original_vcf_path = original_vcf_path.resolve()
     mt_path = mt_path.resolve()
@@ -193,11 +196,10 @@ def convert_mt_to_vcf_shards(mt_path, original_vcf_path):
     rows = mt.count_rows()
     mt = mt.repartition(1000) 
     hl.export_vcf(mt, str(output_vcf_dir), tabix=True, parallel="header_per_shard", metadata=vcf_metadata)
-cli.add_command(click.Command("convert-mt-to-vcf-shards", None, convert_mt_to_vcf_shards,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Argument(["original_vcf_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("convert-mt-to-plink")
+@click.argument("mt_path", type=ClickPathlibPath())
 def convert_mt_to_plink(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
@@ -205,9 +207,12 @@ def convert_mt_to_plink(mt_path):
     bimfile = pd.read_csv(mt_path.with_suffix(".bim"), delimiter="\t", header=None)
     bimfile[0] = bimfile[0].str.slice(3)
     bimfile.to_csv(mt_path.with_suffix(".bim"), sep="\t", header=False, index=False)
-cli.add_command(click.Command("convert-mt-to-plink", None, convert_mt_to_plink,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
+
+@cli.command("subset-mt-samples")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("indiv_list", type=ClickPathlibPath())
+@click.argument("out_path", type=ClickPathlibPath())
 def subset_mt_samples(mt_path, indiv_list, out_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
@@ -216,19 +221,16 @@ def subset_mt_samples(mt_path, indiv_list, out_path):
     mt = mt.annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
     mt = mt.filter_rows(mt.gt_stats.AC.any(lambda ac: (ac > 0) & (ac < mt.gt_stats.AN)))
     mt.write(str(out_path.resolve()), overwrite=True)
-cli.add_command(click.Command("subset-mt-samples", None, subset_mt_samples,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Argument(["indiv_list"], type=ClickPathlibPath()),
-                               click.Argument(["out_path"], type=ClickPathlibPath())]))
 
+
+@cli.command("run-vep")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("extra_args", nargs=-1)
 def run_vep(mt_path, extra_args):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.vep(mt, config="/sc/arion/projects/mscic1/files/WGS/vep/vep_config_script.json")
     mt.write(str(mt_path.with_suffix(".VEP_annotated.mt")), overwrite=True)
-cli.add_command(click.Command("run-vep", None, run_vep,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Argument(["extra_args"], nargs=-1)]))
 
 
 def replace_annotation_in_filename(mt_path, suffix):
@@ -238,16 +240,18 @@ def replace_annotation_in_filename(mt_path, suffix):
         return mt_path.with_suffix(f".{suffix}.mt")
 
 
+@cli.command("filter-lof-hc")
+@click.argument("mt_path", type=ClickPathlibPath())
 def filter_lof_hc(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.vep.transcript_consequences.any(lambda x: x.lof == "HC"))
     outpath = replace_annotation_in_filename(mt_path, "LOF_filtered")
     mt.write(str(outpath), overwrite=True)
-cli.add_command(click.Command("filter-lof-hc", None, filter_lof_hc,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("filter-functional-variation")
+@click.argument("mt_path", type=ClickPathlibPath())
 def filter_functional_variation(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
@@ -262,19 +266,21 @@ def filter_functional_variation(mt_path):
     ))
     outpath = replace_annotation_in_filename(mt_path, "functional_filtered")
     mt.write(str(outpath), overwrite=True)
-cli.add_command(click.Command("filter-functional-variation", None, filter_functional_variation,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("split-chromosomes")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("chrom", type=str)
 def split_chromosomes(mt_path, chrom):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt_filtered = mt.filter_rows(mt.locus.contig == chrom)
     mt_filtered.write(str(mt_path.with_suffix(f".{chrom}.mt")), overwrite=True)
-cli.add_command(click.Command("split-chromosomes", None, split_chromosomes,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Argument(["chrom"], type=str)]))
 
+
+@cli.command("merge-chromosomes")
+@click.argument("infiles", type=ClickPathlibPath(), nargs=-1)
+@click.argument("outfile", type=ClickPathlibPath())
 def merge_chromosomes(infiles, outfile):
     input_mts = []
     for infile in infiles:
@@ -283,30 +289,32 @@ def merge_chromosomes(infiles, outfile):
         input_mts.append(mt)
     merged_mt = hl.MatrixTable.union_rows(*input_mts)
     merged_mt.write(str(outfile), overwrite=True)
-cli.add_command(click.Command("merge-chromosomes", None, merge_chromosomes,
-                              [click.Argument(["infiles"], type=ClickPathlibPath(), nargs=-1),
-                               click.Argument(["outfile"], type=ClickPathlibPath())]))
 
+
+@cli.command("restrict-to-bed")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("bed_path", type=ClickPathlibPath())
+@click.argument("out_mt_path", type=ClickPathlibPath())
 def restrict_to_bed(mt_path, bed_path, out_mt_path):
     interval_table = hl.import_bed(str(bed_path.resolve()), reference_genome='GRCh38')
     mt = hl.read_matrix_table(str(mt_path.resolve()))
     mt = mt.filter_rows(hl.is_defined(interval_table[mt.locus]))
     mt.write(str(out_mt_path.resolve()), overwrite=True)
-cli.add_command(click.Command("restrict-to-bed", None, restrict_to_bed,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Argument(["bed_path"], type=ClickPathlibPath()),
-                               click.Argument(["out_mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("transform-tpm-table")
+@click.argument("isoform_tpm_tsv_path", type=ClickPathlibPath())
+@click.argument("tx_summary_ht_path", type=ClickPathlibPath())
+@click.argument("gene_maximums_ht_path", type=ClickPathlibPath())
 def transform_tpm_table(isoform_tpm_tsv_path, tx_summary_ht_path, gene_maximums_ht_path):
     tx_annotation.get_gtex_summary(str(isoform_tpm_tsv_path), str(tx_summary_ht_path))
     tx_annotation.get_gene_expression(str(tx_summary_ht_path), str(gene_maximums_ht_path))
-cli.add_command(click.Command("transform-tpm-table", None, transform_tpm_table,
-                              [click.Argument(["isoform_tpm_tsv_path"], type=ClickPathlibPath()),
-                               click.Argument(["tx_summary_ht_path"], type=ClickPathlibPath()),
-                               click.Argument(["gene_maximums_ht_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("annotate-pext")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("tx_summary_ht_path", type=ClickPathlibPath())
+@click.argument("gene_maximums_ht_path", type=ClickPathlibPath())
 def annotate_pext(mt_path, tx_summary_ht_path, gene_maximums_ht_path):
     mt_path = mt_path.resolve()
     tx_summary_ht_path = tx_summary_ht_path.resolve()
@@ -316,30 +324,26 @@ def annotate_pext(mt_path, tx_summary_ht_path, gene_maximums_ht_path):
     mt = tx_annotation.tx_annotate_mt(mt, tx_summary_ht, gene_maximums_ht_path)
     outpath = replace_annotation_in_filename(mt_path, "pext_annotated")
     mt.write(str(outpath), overwrite=True)
-cli.add_command(click.Command("annotate-pext", None, annotate_pext,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Argument(["tx_summary_ht_path"], type=ClickPathlibPath()),
-                               click.Argument(["gene_maximums_ht_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("filter-hi-pext")
+@click.argument("mt_path", type=ClickPathlibPath())
 def filter_hi_pext(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.tx_annotation.any(lambda x: x.mean_proportion > 0.9))
     outpath = replace_annotation_in_filename(mt, mt_path, "pext_filtered")
     mt.write(str(outpath), overwrite=True)
-cli.add_command(click.Command("filter-hi-pext", None, filter_hi_pext,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
+@cli.command("filter-hi-pext-lof")
+@click.argument("mt_path", type=ClickPathlibPath())
 def filter_hi_pext_lof(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = mt.filter_rows(mt.tx_annotation.any(lambda x: (x.lof == hl.literal("HC")) & (x.mean_proportion > 0.9)))
     outpath = replace_annotation_in_filename(mt_path, "pext_LOF_filtered")
     mt.write(str(outpath), overwrite=True)
-cli.add_command(click.Command("filter-hi-pext-lof", None, filter_hi_pext_lof,
-                              [click.Argument(["mt_path"], type=ClickPathlibPath())]))
 
 
 if __name__ == "__main__":
