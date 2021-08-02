@@ -25,6 +25,12 @@ BIOME_CHRALL_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.
 BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
 
+BIOME_GSA_VCF = Path(" /sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_vcf/GSA_chr_all.vcf.gz")
+BIOME_GSA_STEM = str(REGEN_WORKING_DIR / BIOME_GSA_VCF.with_suffix('').stem)  # because original VCF is .vcf.bgz
+BIOME_GSA_SAMPLE_MATCHED_STEM = BIOME_GSA_STEM + ".sample_matched"
+BIOME_GSA_GWAS_STEM = BIOME_GSA_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
+BIOME_GSA_LD_STEM = BIOME_GSA_GWAS_STEM + ".LD_pruned"
+
 BIOME_CLINICAL_TABLE = REGEN_WORKING_DIR / "clinical_severity_table_regenid.csv"
 EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
 BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
@@ -139,7 +145,20 @@ rule biome_vcf2mt:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt",
         hail_extra_args="--filter-multi"
+    resources:
+        cpus = 128,
+        mem_mb = 11500
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
+rule biome_gsa_vcf2mt:
+    input:
+        vcf=BIOME_GSA_VCF
+    output:
+        mt=directory(BIOME_GSA_VCF + ".mt")
+    params:
+        pass_output=True,
+        hail_cmd="convert-vcf-to-mt",
+        hail_extra_args="--hg19"
     resources:
         cpus = 128,
         mem_mb = 11500

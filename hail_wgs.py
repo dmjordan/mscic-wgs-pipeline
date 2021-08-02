@@ -46,12 +46,12 @@ def split_vcf_R_field_sum(expr, a_index):
                          [hl.sum(expr) - expr[a_index], expr[a_index]])
 
 
-def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False):
+def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False, hg19=False):
     vcf = hl.import_vcf(str(vcf_path.resolve()),
                         force_bgz=True, 
-                        reference_genome="GRCh38",
+                        reference_genome="GRCh37" if hg19 else "GRCh38",
                         array_elements_required=False,
-                        contig_recoding={chrom: f"chr{chrom}" for chrom in [str(x) for x in range(1,23)] + ["X", "Y"]})
+                        contig_recoding={chrom: f"chr{chrom}" for chrom in [str(x) for x in range(1,23)] + ["X", "Y"]} if not hg19 else {})
     if filter_multi:
         vcf = vcf.filter_rows(hl.len(vcf.alleles) == 2)
     else:
@@ -76,7 +76,8 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False):
 cli.add_command(click.Command("convert-vcf-to-mt", None, convert_vcf_to_mt,
                               [click.Argument(["vcf_path"], type=ClickPathlibPath()),
                                click.Argument(["mt_path"], type=ClickPathlibPath()),
-                               click.Option(["--filter-multi/--allow-multi"], default=False)]))
+                               click.Option(["--filter-multi/--allow-multi"], default=False),
+                               click.Option(["--hg19/--hg38"], default=False)]))
 
 def run_hail_qc(mt_path):
     mt_path = mt_path.resolve()
