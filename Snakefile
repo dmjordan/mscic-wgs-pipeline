@@ -29,16 +29,6 @@ BIOME_CLINICAL_TABLE = REGEN_WORKING_DIR / "clinical_severity_table_regenid.csv"
 EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
 BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
 
-def regeneron_orelse(regen, other):
-    def f(wildcards, input):
-        for filename in input:
-            if str(filename).startswith("/sc/private/regen"):
-                return regen
-        else:
-            return other
-    return f
-
-
 TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", 
         "severity_ever_eod", "max_who",
         "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
@@ -150,10 +140,8 @@ rule biome_vcf2mt:
         hail_extra_args="--filter-multi"
 
     resources:
-        cpus = 48,
-        mem_mb = 11500,
-        queue = "private",
-        host = "dor01-1"
+        cpus = 128,
+        mem_mb = 11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 
@@ -165,10 +153,8 @@ rule mt2plink:
     params:
         hail_cmd="convert-mt-to-plink"
     resources:
-        cpus=regeneron_orelse(48, 128),
-        mem_mb=11500,
-        queue=regeneron_orelse("premium", "private"),
-        host=regeneron_orelse("dor01-1", None)
+        cpus=128,
+        mem_mb=11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule plink2snpgds:
@@ -178,9 +164,6 @@ rule plink2snpgds:
         gds="{prefix}.snp.gds"
     params:
         genesis_cmd="plink2snpgds"
-    resources:
-        queue=regeneron_orelse("premium","private"),
-        host=regeneron_orelse("dor01-1",None)
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 rule mt2vcfshards:
@@ -192,10 +175,8 @@ rule mt2vcfshards:
     params:
         hail_cmd="convert-mt-to-vcf-shards"
     resources:
-        cpus=regeneron_orelse(48,128),
-        mem_mb=11500,
-        queue=regeneron_orelse("premium","private"),
-        host=regeneron_orelse("dor01-1",None)
+        cpus=128,
+        mem_mb=11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule build_vcf:
@@ -203,9 +184,6 @@ rule build_vcf:
         shards_dir="{prefix}.shards.vcf.bgz"
     output:
         vcf="{prefix}.vcf.bgz"
-    resources:
-        queue = regeneron_orelse("premium","private"),
-        host = regeneron_orelse("dor01-1",None)
     shell:
         """
         ml bcftools
@@ -271,27 +249,22 @@ rule biome_sample_list:
         BIOME_CLINICAL_TABLE, EXCLUDED_REGENIDS_TABLE
     output:
         os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
-    resources:
-        queue="private",
-        host="dor01-1"
-    script: """comm -23 <(cut -d, -f1 {input[0]} | sort | uniq) \\
+    shell: """comm -23 <(cut -d, -f1 {input[0]} | sort | uniq) \\
                     <(sort {input[1]}) \\
                     | awk 'NR == 1 {{print "Subject_ID"}} NR > 1 {{print}}' > {output[0]}"""
 
 rule biome_match_samples:
     input:
         mt = f"{BIOME_SPLITCHR_STEM}.mt",
-        indiv_llist = os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
+        indiv_list = os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
     output:
         mt=directory(f"{BIOME_SPLITCHR_SAMPLE_MATCHED_STEM}.mt")
     params:
         hail_cmd="subset-mt-samples",
         pass_output=True
     resources:
-            cpus = 48,
-            mem_mb = 11500,
-            queue="private",
-            host="dor01-1"
+            cpus = 128,
+            mem_mb = 16000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 
@@ -338,9 +311,6 @@ rule biome_pcair:
     params:
         output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
         genesis_cmd="pcair"
-    resources:
-        queue = "private",
-        host = "dor01-1"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 rule race_prediction:
@@ -387,9 +357,6 @@ rule biome_pcrelate:
     params:
         genesis_cmd="pcrelate",
         prefix=BIOME_SPLITCHR_SAMPLE_MATCHED_STEM
-    resources:
-        queue="private",
-        host="dor01-1"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 
@@ -403,10 +370,8 @@ rule gwas_filter:
     params:
         hail_cmd="gwas-filter"
     resources:
-        cpus=regeneron_orelse(48, 128),
-        mem_mb=11500,
-        queue=regeneron_orelse("private", "premium"),
-        host=regeneron_orelse("dor01-1", None)
+        cpus=128, 
+        mem_mb=11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule rare_filter:
@@ -441,10 +406,8 @@ rule prune_ld:
     output:
         mt=directory("{prefix}.LD_pruned.mt")
     resources:
-        cpus = regeneron_orelse(32,128),
-        mem_mb = 16000,
-        queue = regeneron_orelse("private","premium"),
-        host = regeneron_orelse("dor01-1",None)
+        cpus = 128,
+        mem_mb = 16000
     params:
         hail_cmd="ld-prune"
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -516,10 +479,8 @@ rule chrom_merge:
     output:
         "{prefix}.chrall.{suffix}.mt"
     resources:
-        cpus = regeneron_orelse(48, 128),
-        mem_mb = 11500,
-        queue = regeneron_orelse("private", "premium"),
-        host = regeneron_orelse("dor01-1", None)
+        cpus = 128,
+        mem_mb = 11500
     params:
         hail_cmd="merge-chromosomes",
         pass_output=True
@@ -551,9 +512,6 @@ rule biome_design_matrix:
         pcair=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.txt"
     output:
         BIOME_DESIGN_MATRIX
-    resources:
-        queue="private",
-        host="dor01-1"
     script:
         os.path.join(config["scriptsdir"], "build_biome_design_matrix.py")
 
@@ -581,10 +539,8 @@ rule biome_null_model:
     output:
         rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
     resources:
-        cpus=24,
-        mem_mb=20000,
-        queue="private",
-        host="dor01-1"
+        cpus=64,
+        mem_mb=20000
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
     shell:
@@ -658,10 +614,8 @@ rule run_biome_gwas:
     output:
         txt="BIOME_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:
-        cpus=48,
-        mem_mb=11500,
-        queue="private",
-        host="dor01-1"
+        cpus=128,
+        mem_mb=11500
     params:
         script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
     shell:

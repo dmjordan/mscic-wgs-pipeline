@@ -62,7 +62,8 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False):
     vcf = hl.import_vcf(str(vcf_path.resolve()),
                         force_bgz=True, 
                         reference_genome="GRCh38",
-                        array_elements_required=False)
+                        array_elements_required=False,
+                        contig_recoding={chrom: f"chr{chrom}" for chrom in [str(x) for x in range(1,23)] + ["X", "Y"]})
     if filter_multi:
         vcf = vcf.filter_rows(hl.len(vcf.alleles) == 2)
     else:
@@ -223,6 +224,8 @@ def subset_mt_samples(mt_path, indiv_list, out_path):
     mt = hl.read_matrix_table(str(mt_path))
     indiv_list_table = hl.import_table(str(indiv_list)).key_by("Subject_ID")
     mt = mt.semi_join_cols(indiv_list_table)
+    mt = mt.annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
+    mt = mt.filter_rows(mt.gt_stats.AC.any(lambda ac: (ac > 0) & (ac < mt.gt_stats.AN)))
     mt.write(str(out_path.resolve()), overwrite=True)
 cli.add_command(click.Command("subset-mt-samples", None, subset_mt_samples,
                               [click.Argument(["mt_path"], type=ClickPathlibPath()),
@@ -293,7 +296,7 @@ def merge_chromosomes(infiles, outfile):
     merged_mt.write(str(outfile), overwrite=True)
 cli.add_command(click.Command("merge-chromosomes", None, merge_chromosomes,
                               [click.Argument(["infiles"], type=ClickPathlibPath(), nargs=-1),
-                               click.Argument("outfile", type=ClickPathlibPath())]))
+                               click.Argument(["outfile"], type=ClickPathlibPath())]))
 
 def restrict_to_bed(mt_path, bed_path, out_mt_path):
     interval_table = hl.import_bed(str(bed_path.resolve()), reference_genome='GRCh38')
