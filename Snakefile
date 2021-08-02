@@ -543,7 +543,7 @@ rule biome_null_model:
         cpus=128,
         mem_mb=20000
     params:
-        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
+        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive_biome.R")
     shell:
         """
         ml openmpi
