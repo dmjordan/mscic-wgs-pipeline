@@ -80,12 +80,15 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False, hg19=False):
 
 
 @cli.command("convert-bgen-to-mt")
-@click.argument("bgen_path", type=ClickPathlibPath())
-@click.argument("sample_path", type=ClickPathlibPath())
-@click.argument("mt_path", type=ClickPathlibPath())
-def convert_bgen_to_mt(bgen_path, sample_path, mt_path):
-    mt = hl.import_bgen(str(bgen_path), entry_fields=["GT", "dosage"], sample_file=str(sample_path))
-    mt.write(str(mt_path), overwrite=True)
+@click.argument("bgen_path", type=click.Path(exists=True, resolve_path=True))
+@click.argument("sample_path", type=click.Path(exists=True, resolve_path=True))
+@click.argument("idx_path", type=click.Path(writable=True, resolve_path=True))
+@click.argument("mt_path", type=click.Path(writable=True, resolve_path=True))
+@click.option("--reference-genome", type=click.Choice(["GRCh37", "GRCh38"]), default="GRCh37")
+def convert_bgen_to_mt(bgen_path, sample_path, idx_path, mt_path, reference_genome):
+    hl.index_bgen(bgen_path, index_file_map={bgen_path: idx_path}, reference_genome=reference_genome)
+    mt = hl.import_bgen(bgen_path, entry_fields=["GT", "dosage"], sample_file=sample_path, index_file_map={bgen_path: idx_path})
+    mt.write(mt_path, overwrite=True)
 
 
 @cli.command("run-hail-qc")

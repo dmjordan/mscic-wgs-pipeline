@@ -26,7 +26,7 @@ BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
 
 BIOME_GSA_VCF = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_vcf/GSA_chr_all.vcf.gz")
-BIOME_GSA_BGEN = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_bgen8bit/GSA_chr_all.bgen")
+BIOME_GSA_BGEN = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_bgen8bit/GSA_chr_all.8bit.bgen")
 BIOME_GSA_STEM = str(REGEN_WORKING_DIR / BIOME_GSA_VCF.with_suffix('').stem)  # because original VCF is .vcf.bgz
 BIOME_GSA_SAMPLE_MATCHED_STEM = BIOME_GSA_STEM + ".sample_matched"
 BIOME_GSA_GWAS_STEM = BIOME_GSA_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
@@ -163,6 +163,7 @@ rule biome_gsa_bgen2mt:
         bgen=BIOME_GSA_BGEN,
         sample=BIOME_GSA_BGEN.with_name("GSA_Regeneron_ID.sample")
     output:
+        idx=REGEN_WORKING_DIR / (BIOME_GSA_BGEN.name + ".idx2"),
         mt=directory(BIOME_GSA_STEM + ".mt")
     params:
         pass_output=True,
