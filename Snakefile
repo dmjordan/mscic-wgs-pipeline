@@ -70,6 +70,10 @@ rule biome_gwas_traits_of_interest:
         expand("BIOME_{phenotype}.GENESIS.{suffix}",
             phenotype=BIOME_TRAITS, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
+rule biome_gsa_gwas_traits_of_interest:
+    input:
+        expand("BIOME_GSA_{phenotype}.GENESIS.{suffix}",
+            phenotype=BIOME_TRAITS, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
 rule smmat_lof_traits_of_interest:
     input:
