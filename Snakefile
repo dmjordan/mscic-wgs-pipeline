@@ -477,7 +477,7 @@ rule chrom_merge:
     input:
         expand("{prefix}.chr{chrom}.{suffix}.mt", chrom=list(range(1,23)) + ["X"], allow_missing=True)
     output:
-        "{prefix}.chrall.{suffix}.mt"
+        directory("{prefix}.chrall.{suffix}.mt")
     resources:
         cpus = 128,
         mem_mb = 11500
