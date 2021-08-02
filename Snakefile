@@ -34,6 +34,7 @@ BIOME_GSA_LD_STEM = BIOME_GSA_GWAS_STEM + ".LD_pruned"
 BIOME_CLINICAL_TABLE = REGEN_WORKING_DIR / "clinical_severity_table_regenid.csv"
 EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
 BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
+BIOME_GSA_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_gsa_dmatrix.csv"
 
 TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", 
         "severity_ever_eod", "max_who",
@@ -154,7 +155,7 @@ rule biome_gsa_vcf2mt:
     input:
         vcf=BIOME_GSA_VCF
     output:
-        mt=directory(BIOME_GSA_VCF + ".mt")
+        mt=directory(BIOME_GSA_STEM + ".mt")
     params:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt",
@@ -186,10 +187,23 @@ rule plink2snpgds:
         genesis_cmd="plink2snpgds"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
+
+def original_vcf(wildcards):
+    path_stem = Path(wildcards.prefix).stem
+    if path_stem.startswith("SINAI"):
+        return str(REGEN_EXOME_PATTERN).format("chr21")
+    elif path_stem.startswith("GSA_chr_all"):
+        return str(BIOME_GSA_VCF)
+    elif path_stem.startswith("625_Samples.cohort"):
+        return ORIGINAL_VCF
+    else:
+        raise ValueError(f"Don't know where to find the original VCF for prefix {wildcards.prefix}")
+
+
 rule mt2vcfshards:
     input:
         mt="{prefix}.mt",
-        vcf=lambda wildcards: str(REGEN_EXOME_PATTERN).format(chrom="chr21") if Path(wildcards.prefix).stem.startswith("SINAI") else ORIGINAL_VCF
+        vcf=original_vcf
     output:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
     params:
@@ -275,10 +289,10 @@ rule biome_sample_list:
 
 rule biome_match_samples:
     input:
-        mt = f"{BIOME_SPLITCHR_STEM}.mt",
+        mt = "{prefix}.mt",
         indiv_list = os.path.join(REGEN_WORKING_DIR, "covid19_hospitalized_regenids.indiv_list.txt")
     output:
-        mt=directory(f"{BIOME_SPLITCHR_SAMPLE_MATCHED_STEM}.mt")
+        mt=directory("{prefix}.sample_matched.mt")
     params:
         hail_cmd="subset-mt-samples",
         pass_output=True
@@ -302,10 +316,10 @@ rule king:
 
 rule pcair:
     input:
-        gds=f"{LD_STEM}.snp.gds",
-        king=f"{SAMPLE_MATCHED_STEM}.kin0"
+        gds="{prefix}.GWAS_filtered.LD_pruned.snp.gds",
+        king="{prefix}.kin0"
     output:
-        multiext(f"{SAMPLE_MATCHED_STEM}.PCAir", ".RDS", ".txt")
+        multiext("{prefix}.PCAir", ".RDS", ".txt")
     params:
         output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
         genesis_cmd="pcair"
@@ -322,16 +336,6 @@ rule pcair_race:
        genesis_cmd="pcair"
    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
-rule biome_pcair:
-    input:
-        gds=f"{BIOME_CHRALL_LD_STEM}.snp.gds",
-        king=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.kin0"
-    output:
-        multiext(f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir",".RDS",".txt")
-    params:
-        output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
-        genesis_cmd="pcair"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 rule race_prediction:
     input:
@@ -359,26 +363,14 @@ rule split_races:
 
 rule pcrelate:
     input:
-        pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.RDS",
-        gds=f"{LD_STEM}.snp.gds"
+        pcair="{prefix}.PCAir.RDS",
+        gds="prefix.GWAS_filtered.LD_pruned.snp.gds"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+        rds="{prefix}.PCRelate.RDS"
     params:
         genesis_cmd="pcrelate",
         prefix=SAMPLE_MATCHED_STEM
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
-
-rule biome_pcrelate:
-    input:
-        pcair=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.RDS",
-        gds=f"{BIOME_CHRALL_LD_STEM}.snp.gds"
-    output:
-        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
-    params:
-        genesis_cmd="pcrelate",
-        prefix=BIOME_CHRALL_SAMPLE_MATCHED_STEM
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
-
 
 # variant subsets
 
@@ -529,9 +521,9 @@ rule biome_design_matrix:
     input:
         table=BIOME_CLINICAL_TABLE,
         excluded_ids=EXCLUDED_REGENIDS_TABLE,
-        pcair=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.txt"
+        pcair="{prefix}.PCAir.txt"
     output:
-        BIOME_DESIGN_MATRIX
+        "{prefix}.biome_dmatrix.csv"
     script:
         os.path.join(config["scriptsdir"], "build_biome_design_matrix.py")
 
@@ -554,10 +546,10 @@ rule null_model:
 
 rule biome_null_model:
     input:
-        BIOME_DESIGN_MATRIX,
-        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+        "{prefix}.biome_dmatrix.csv",
+        rds="{prefix}.PCRelate.RDS"
     output:
-        rds=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
+        rds="{prefix}.BIOME_{phenotype_untagged}.null.RDS"
     resources:
         cpus=128,
         mem_mb=20000
@@ -566,7 +558,7 @@ rule biome_null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {wildcards.prefix} {wildcards.phenotype_untagged}
         """
 
 
@@ -642,6 +634,23 @@ rule run_biome_gwas:
         """
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_CHRALL_SAMPLE_MATCHED_STEM} BIOME_{wildcards.phenotype_untagged}
+        """
+
+rule run_biome_gsa_gwas:
+    input:
+        gds=f"{BIOME_GSA_GWAS_STEM}.shards.seq.gds",
+        null_nodel=f"{BIOME_GSA_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
+    output:
+        txt="BIOME_GSA_{phenotype_untagged}.GENESIS.assoc.txt"
+    resources:
+        cpus=128,
+        mem_mb=11500
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_GSA_SAMPLE_MATCHED_STEM} BIOME_{wildcards.phenotype_untagged}
         """
 
 ruleorder: run_biome_gwas > run_gwas
