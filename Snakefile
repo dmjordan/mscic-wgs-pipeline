@@ -25,7 +25,7 @@ BIOME_CHRALL_SAMPLE_MATCHED_STEM = BIOME_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.
 BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
 
-BIOME_GSA_VCF = Path(" /sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_vcf/GSA_chr_all.vcf.gz")
+BIOME_GSA_VCF = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_vcf/GSA_chr_all.vcf.gz")
 BIOME_GSA_STEM = str(REGEN_WORKING_DIR / BIOME_GSA_VCF.with_suffix('').stem)  # because original VCF is .vcf.bgz
 BIOME_GSA_SAMPLE_MATCHED_STEM = BIOME_GSA_STEM + ".sample_matched"
 BIOME_GSA_GWAS_STEM = BIOME_GSA_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
@@ -53,6 +53,7 @@ wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
     race=r"WHITE|BLACK|ASIAN|HISPANIC",
     phenotype_untagged=r"[a-z_]+",
+    phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
     prefix=".*(?<!shards)"
 
@@ -163,7 +164,7 @@ rule biome_gsa_vcf2mt:
     params:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt",
-        hail_extra_args="--hg19"
+        hail_extra_args="--hg19 --filter-multi"
     resources:
         cpus = 128,
         mem_mb = 11500
@@ -368,7 +369,7 @@ rule split_races:
 rule pcrelate:
     input:
         pcair="{prefix}.PCAir.RDS",
-        gds="prefix.GWAS_filtered.LD_pruned.snp.gds"
+        gds="{prefix}.GWAS_filtered.LD_pruned.snp.gds"
     output:
         rds="{prefix}.PCRelate.RDS"
     params:
@@ -609,9 +610,9 @@ rule null_model_loo:
 rule run_gwas:
     input:
         gds=f"{GWAS_STEM}.shards.seq.gds",
-        null_nodel=f"{SAMPLE_MATCHED_STEM}.{{phenotype}}.null.RDS"
+        null_model=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}{{phenotype_suffix}}.null.RDS"
     output:
-        txt="{phenotype}.GENESIS.assoc.txt"
+        txt="{{phenotype_untagged}}{{phenotype_suffix}}.GENESIS.assoc.txt"
     resources:
         cpus=128,
         mem_mb=16000
@@ -620,13 +621,13 @@ rule run_gwas:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}{wildcards.phenotype_suffix}
         """
 
 rule run_biome_gwas:
     input:
         gds=f"{BIOME_CHRALL_GWAS_STEM}.shards.seq.gds",
-        null_nodel=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
+        null_model=f"{BIOME_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
     output:
         txt="BIOME_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:
@@ -643,7 +644,7 @@ rule run_biome_gwas:
 rule run_biome_gsa_gwas:
     input:
         gds=f"{BIOME_GSA_GWAS_STEM}.shards.seq.gds",
-        null_nodel=f"{BIOME_GSA_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
+        null_model=f"{BIOME_GSA_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
     output:
         txt="BIOME_GSA_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:
@@ -657,7 +658,7 @@ rule run_biome_gsa_gwas:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_GSA_SAMPLE_MATCHED_STEM} BIOME_{wildcards.phenotype_untagged}
         """
 
-ruleorder: run_biome_gwas > run_gwas
+ruleorder: run_biome_gsa_gwas > run_biome_gwas > run_gwas
 
 rule gwas_plots:
     input:
