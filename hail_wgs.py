@@ -12,7 +12,7 @@ import tx_annotation
 #cli = click.Group("hail-wgs")
 @click.group("hail-wgs")
 def cli():
-    tmp_path = "/sc/arion/scratch/hail/tmp/"
+    tmp_path = "/sc/arion/scratch/jordad05/hail/tmp/"
     hl.init(tmp_dir=tmp_path, min_block_size=128, local_tmpdir="/local/tmp/",
                 log=hl.utils.timestamp_path(os.path.join(os.environ["SPARK_LOG_DIR"], 'hail')))
 
