@@ -169,7 +169,7 @@ rule plink2snpgds:
 rule mt2vcfshards:
     input:
         mt="{prefix}.mt",
-        vcf=ORIGINAL_VCF
+        vcf=lambda wildcards: REGEN_EXOME_PATTERN.format(chrom="chr21") if Path(wildcards.prefix).stem.startswith("SINAI") else ORIGINAL_VCF
     output:
         shards_dir=directory("{prefix}.shards.vcf.bgz")
     params:
