@@ -80,14 +80,15 @@ def convert_vcf_to_mt(vcf_path, mt_path, filter_multi=False, hg19=False):
 
 
 @cli.command("convert-bgen-to-mt")
-@click.argument("bgen_path", type=click.Path(exists=True, resolve_path=True))
+@click.argument("bgen_paths", type=click.Path(exists=True, resolve_path=True), nargs=22)
 @click.argument("sample_path", type=click.Path(exists=True, resolve_path=True))
-@click.argument("idx_path", type=click.Path(writable=True, resolve_path=True))
+@click.argument("idx_paths", type=click.Path(writable=True, resolve_path=True), nargs=22)
 @click.argument("mt_path", type=click.Path(writable=True, resolve_path=True))
 @click.option("--reference-genome", type=click.Choice(["GRCh37", "GRCh38"]), default="GRCh37")
-def convert_bgen_to_mt(bgen_path, sample_path, idx_path, mt_path, reference_genome):
-    hl.index_bgen(bgen_path, index_file_map={bgen_path: idx_path}, reference_genome=reference_genome)
-    mt = hl.import_bgen(bgen_path, entry_fields=["GT", "dosage"], sample_file=sample_path, index_file_map={bgen_path: idx_path})
+def convert_bgen_to_mt(bgen_paths, sample_path, idx_paths, mt_path, reference_genome):
+    index_file_map = {bgen_path: idx_path for bgen_path, idx_path in zip(bgen_paths, idx_paths)}
+    hl.index_bgen(bgen_paths, index_file_map=index_file_map, reference_genome=reference_genome)
+    mt = hl.import_bgen(bgen_paths, entry_fields=["GT", "dosage"], sample_file=sample_path, index_file_map=index_file_map)
     mt.write(mt_path, overwrite=True)
 
 
