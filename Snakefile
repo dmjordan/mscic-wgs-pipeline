@@ -26,7 +26,9 @@ BIOME_CHRALL_GWAS_STEM = BIOME_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 BIOME_CHRALL_LD_STEM = BIOME_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
 
 BIOME_GSA_VCF = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_vcf/GSA_chr_all.vcf.gz")
-BIOME_GSA_BGEN = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_bgen8bit/GSA_{chrom}.8bit.bgen")
+BIOME_GSA_BGEN_PATTERN = Path("/sc/private/regen/data/Regeneron/GSA/imputed_tgp_p3_bgen8bit/GSA_{chrom}.8bit.bgen")
+BIOME_GSA_BGEN_FILES = [BIOME_GSA_BGEN_PATTERN.with_name(BIOME_GSA_BGEN_PATTERN.name.format(chrom=f"chr{chrom:02}")) for chrom in range(1,23)]
+BIOME_GSA_BGEN_INDEX_FILES = [REGEN_WORKING_DIR / (file.name + ".idx2") for file in BIOME_GSA_BGEN_FILES]
 BIOME_GSA_STEM = str(REGEN_WORKING_DIR / BIOME_GSA_VCF.with_suffix('').stem)  # because original VCF is .vcf.bgz
 BIOME_GSA_SAMPLE_MATCHED_STEM = BIOME_GSA_STEM + ".sample_matched"
 BIOME_GSA_GWAS_STEM = BIOME_GSA_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
@@ -158,18 +160,31 @@ rule biome_vcf2mt:
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 
+rule index_bgen:
+    input:
+        BIOME_GSA_BGEN_FILES
+    output:
+        [directory(idx) for idx in BIOME_GSA_BGEN_INDEX_FILES]
+    params:
+        pass_output=True,
+        hail_cmd="index-bgen",
+    resources:
+        cpus = 22,
+        mem_mb = 11500
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+
 rule biome_gsa_bgen2mt:
     input:
-        expand(BIOME_GSA_BGEN, chrom=[f"chr{chrom:02}" for chrom in range(1,23)]),
-        sample=BIOME_GSA_BGEN.with_name("GSA_Regeneron_ID.sample")
+        BIOME_GSA_BGEN_PATTERN.with_name("GSA_Regeneron_ID.sample"),
+        BIOME_GSA_BGEN_FILES, BIOME_GSA_BGEN_INDEX_FILES
     output:
-        expand(REGEN_WORKING_DIR / (BIOME_GSA_BGEN.name + ".idx2"), chrom=[f"chr{chrom:02}" for chrom in range(1,23)]),
         mt=directory(BIOME_GSA_STEM + ".mt")
     params:
         pass_output=True,
         hail_cmd="convert-bgen-to-mt",
     resources:
-        cpus = 24,
+        cpus = 128,
         mem_mb = 11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
