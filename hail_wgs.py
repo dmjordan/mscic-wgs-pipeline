@@ -223,8 +223,16 @@ def convert_mt_to_plink(mt_path):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     hl.export_plink(mt, str(mt_path.with_suffix("")), fam_id=mt.s, ind_id=mt.s)
-    bimfile = pd.read_csv(mt_path.with_suffix(".bim"), delimiter="\t", header=None)
-    bimfile[0] = bimfile[0].str.slice(3)
+    bimfile = pd.read_csv(mt_path.with_suffix(".bim"), delimiter="\t", header=None,
+                          names=["chrom", "varid", "pos_cm", "pos_bp", "a1", "a2"],
+                          dtype={"chrom": str,
+                                 "varid": str,
+                                 "pos_cm": float,
+                                 "pos_bp": int,
+                                 "a1": str,
+                                 "a2": str})
+    if bimfile[0].str.startswith("chr").all():
+        bimfile[0] = bimfile[0].str.slice(3)
     bimfile.to_csv(mt_path.with_suffix(".bim"), sep="\t", header=False, index=False)
 
 
