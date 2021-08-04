@@ -672,7 +672,7 @@ rule run_biome_gsa_gwas:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_GSA_SAMPLE_MATCHED_STEM} BIOME_{wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {BIOME_GSA_SAMPLE_MATCHED_STEM} BIOME_{wildcards.phenotype_untagged} {output.txt}
         """
 
 ruleorder: run_biome_gsa_gwas > run_biome_gwas > run_gwas

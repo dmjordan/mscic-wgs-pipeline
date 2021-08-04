@@ -9,6 +9,11 @@ registerDoMPI(cl)
 args <- commandArgs(trailingOnly=TRUE)
 file_prefix <- args[[1]]
 endpoint <- args[[2]]
+if (length(x) > 2) {
+    output_file <- args[[3]]
+} else {
+    output_file <- paste(endpoint, "GENESIS", "assoc", "txt", sep=".")
+}
 
 gdsShardsDir <- paste(file_prefix, "GWAS_filtered", "shards", "seq", "gds", sep=".")
 
@@ -53,7 +58,7 @@ assoc <- foreach(gdsPath=gdsFiles,
     }
 }
 
-write_delim(assoc, paste(endpoint, "GENESIS", "assoc", "txt", sep="."))
+write_delim(assoc, output_file)
 
 # library(qqman)
 # png(paste(endpoint, "GENESIS", "qq", "png", sep="."))
