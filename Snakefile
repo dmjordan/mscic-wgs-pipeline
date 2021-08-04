@@ -331,7 +331,7 @@ rule king:
     input:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     output:
-        multiext("{prefix}", ".kin0", "X.kin", "X.kin0")
+        "{prefix}.kin0"
     resources:
         cpus=16,
         single_host=1
@@ -344,7 +344,7 @@ rule pcair:
     output:
         multiext("{prefix}.PCAir", ".RDS", ".txt")
     params:
-        output_stem=lambda wildcards, output: Path(output[0]).with_suffix('').stem,
+        output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
         genesis_cmd="pcair"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
@@ -391,8 +391,7 @@ rule pcrelate:
     output:
         rds="{prefix}.PCRelate.RDS"
     params:
-        genesis_cmd="pcrelate",
-        prefix=SAMPLE_MATCHED_STEM
+        genesis_cmd="pcrelate"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
 # variant subsets

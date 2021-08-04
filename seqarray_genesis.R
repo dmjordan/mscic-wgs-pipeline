@@ -338,7 +338,7 @@ if (exists("snakemake")) {
         snakemake@params[["genesis_cmd"]],
         plink2snpgds=build_snp_gds(snakemake@wildcards[["prefix"]]),
         pcair=run_pcair(snakemake@input[["gds"]], snakemake@input[["king"]], snakemake@params[["output_stem"]]),
-        pcrelate=run_pcrelate(snakemake@params[["prefix"]]),
+        pcrelate=run_pcrelate(snakemake@wildcards[["prefix"]]),
         gwas_plots=make_gwas_plots(snakemake@wildcards[["phenotype"]]),
         isoform_table=make_isoform_tpms_table(snakemake@input[[1]], snakemake@output[[1]])
     )

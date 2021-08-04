@@ -231,8 +231,8 @@ def convert_mt_to_plink(mt_path):
                                  "pos_bp": int,
                                  "a1": str,
                                  "a2": str})
-    if bimfile[0].str.startswith("chr").all():
-        bimfile[0] = bimfile[0].str.slice(3)
+    if bimfile["chrom"].str.startswith("chr").all():
+        bimfile["chrom"] = bimfile["chrom"].str.slice(3)
     bimfile.to_csv(mt_path.with_suffix(".bim"), sep="\t", header=False, index=False)
 
 
