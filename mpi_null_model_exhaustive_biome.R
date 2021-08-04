@@ -18,7 +18,7 @@ cat("endpoint:", endpoint, fill=TRUE)
 cat("subset:", if (subset_tag == "") "<none>" else subset_tag, fill=TRUE)
 cat("excluded samples:", if (length(exclude_samples) > 0) exclude_samples else "<none>", fill=TRUE)
 
-read_csv("/sc/private/regen/IPM-general/jordad05/mscic/regenid_dmatrix.csv") %>%
+read_csv(paste0(file_prefix, ".biome_dmatrix.csv")) %>%
   rename(scanID=X1) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
 sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
