@@ -52,6 +52,8 @@ GTEX_MODELS_DIR = Path(config["resourcesdir"]) / "metaxcan_data" / "models"
 MASHR_MODELS_DIR = GTEX_MODELS_DIR / "eqtl" / "mashr"
 ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob("*.db")]
 
+MSCIC_EQTL_DIR = Path("/sc/arion/projects/mscic1/results/Noam/MainCovid/QTL/")
+
 wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
     race=r"WHITE|BLACK|ASIAN|HISPANIC",
@@ -99,11 +101,17 @@ rule metaxcan_go_eqtl_elastic_net_traits_of_interest:
             tissue=ALL_TISSUES + ["smultixcan"])
 
 
-rule coloc2_traits_of_interest:
+rule coloc2_gtex_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
-rule coloc2_go_traits_of_interest:
+
+rule coloc2_mscic_traits_of_interest:
+    input:
+        expand("coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt", phenotype=TRAITS_OF_INTEREST, race=["WHITE", "BLACK", "HISPANIC", "ASIAN", "ALL"])
+
+
+rule coloc2_gtex_go_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.{tissue}.GOFigure", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
@@ -938,7 +946,7 @@ rule smultixcan:
         python {params.pval_script_path} {output.multixcan}
         """
 
-rule coloc2:
+rule coloc2_gtex:
     input:
         eqtl="/sc/arion/projects/mscic1/resources/GTEx_Analysis_v8_eQTL/{tissue}.v8.signif_variant_gene_pairs.txt.gz",
         assoc="{phenotype}.GENESIS.assoc.txt"
@@ -950,7 +958,24 @@ rule coloc2:
     resources:
         mem_mb=16000
 
-    script: os.path.join(config["scriptsdir"], "do_coloc2.R")
+    script: os.path.join(config["scriptsdir"],"do_coloc2_gtex.R")
+
+rule coloc2_mscic:
+    input:
+        eqtl=MSCIC_EQTL_DIR / "{race}/results/GE_MAINCOVID_SV_30_eQTL_permutations.all.chunks.txt.gz",
+        bim=MSCIC_EQTL_DIR / "{race}" / SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.bim",
+        fam=MSCIC_EQTL_DIR / "{race}" / SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.fam",
+        assoc="{phenotype}.GENESIS.assoc.txt"
+    output:
+        "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt",
+        directory("coloc2/{phenotype}.Whole_Blood_mscic{race}.output.perSNP")
+    params:
+        prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}"
+    resources:
+        mem_mb=16000
+
+    script: os.path.join(config["scriptsdir"],"do_coloc2_mscic.R")
+
 
 rule coloc2_go_enrichment:
     input:
