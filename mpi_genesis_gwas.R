@@ -9,7 +9,7 @@ registerDoMPI(cl)
 args <- commandArgs(trailingOnly=TRUE)
 file_prefix <- args[[1]]
 endpoint <- args[[2]]
-if (length(x) > 2) {
+if (length(args) > 2) {
     output_file <- args[[3]]
 } else {
     output_file <- paste(endpoint, "GENESIS", "assoc", "txt", sep=".")

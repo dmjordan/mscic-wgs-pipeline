@@ -56,7 +56,7 @@ MSCIC_EQTL_DIR = Path("/sc/arion/projects/mscic1/results/Noam/MainCovid/QTL/")
 
 wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
-    race=r"WHITE|BLACK|ASIAN|HISPANIC",
+    race=r"WHITE|BLACK|ASIAN|HISPANIC|ALL",
     phenotype_untagged=r"[a-z_]+",
     phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
@@ -960,11 +960,19 @@ rule coloc2_gtex:
 
     script: os.path.join(config["scriptsdir"],"do_coloc2_gtex.R")
 
+rule filter_mscic_nominal_eqtls:
+    input:
+        MSCIC_EQTL_DIR / "{race}/results/GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz",
+    output:
+        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz"
+    shell:
+        "zcat {input[0]} | awk '($12 < 0.05)' | gzip -c > {output[0]}"
+
 rule coloc2_mscic:
     input:
-        eqtl=MSCIC_EQTL_DIR / "{race}/results/GE_MAINCOVID_SV_30_eQTL_permutations.all.chunks.txt.gz",
-        bim=MSCIC_EQTL_DIR / "{race}" / SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.bim",
-        fam=MSCIC_EQTL_DIR / "{race}" / SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.fam",
+        eqtl="{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz",
+        bim=MSCIC_EQTL_DIR / "{race}" / (SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.bim"),
+        fam=MSCIC_EQTL_DIR / "{race}" / (SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.fam"),
         assoc="{phenotype}.GENESIS.assoc.txt"
     output:
         "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt",
