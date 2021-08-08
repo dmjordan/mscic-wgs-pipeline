@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 from pathlib import Path
 import click
 
@@ -210,6 +211,7 @@ def convert_mt_to_vcf_shards(mt_path, original_vcf_path):
     original_vcf_path = original_vcf_path.resolve()
     mt_path = mt_path.resolve()
     output_vcf_dir = mt_path.with_suffix(".shards.vcf.bgz")
+    shutil.rmtree(output_vcf_dir, ignore_errors=True)
     vcf_metadata = hl.get_vcf_metadata(str(original_vcf_path))
     mt = hl.read_matrix_table(str(mt_path))
     rows = mt.count_rows()

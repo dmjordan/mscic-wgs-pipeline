@@ -241,7 +241,7 @@ rule mt2vcfshards:
         hail_cmd="convert-mt-to-vcf-shards"
     resources:
         cpus=128,
-        mem_mb=11500
+        mem_mb=16000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule build_vcf:
