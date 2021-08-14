@@ -122,7 +122,7 @@ process.dataset <- function(d, suffix, ave=TRUE, estimate_sdy=TRUE,correlation=0
     colnames(df)[-3] <- paste(colnames(df)[-3], suffix, sep=".")
     df <- subset(df, df$MAF>0 & df$pvalues>0) # all p values and MAF > 0
     if(ave){
-        abf <- approx.bf.estimates.ave.pvalue(pnorm(df$pvalues/2,lower.tail=F), maf=df$MAF,type=d$type,s=d$s,N=d$N,suffix=suffix)
+        abf <- approx.bf.estimates.ave.pvalue(pnorm(df$pvalues/2,lower.tail=F), maf=df$MAF,type=d$type,s=d$s,n=d$N,suffix=suffix)
     }else{
         abf <- approx.bf.p(p=df$pvalues, f=df$MAF, type=d$type, N=d$N, s=d$s, suffix=suffix)
     }
@@ -629,8 +629,8 @@ message("Looping through ", nrow(bed), " genes from the eQTL data")
 overlap.df<-merge(biom.df,eqtl.df,by="SNPID",suffixes=c(".biom",".eqtl"))
 
 biom.df$sdY.biom = sdY.est((overlap.df$SE.biom)^2,overlap.df$MAF.eqtl,overlap.df$N.biom,overlap.df$BETA.biom) 
-message("Running in parallel")
-registerDoParallel(cores=cores)
+#message("Running in parallel")
+#registerDoParallel(cores=cores)
 list.probes = bed$ProbeID
 print(class(eqtl.df))
 eqtl.dfByProbe = split(seq(nrow(eqtl.df)), eqtl.df$ProbeID)

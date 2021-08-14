@@ -901,7 +901,8 @@ rule spredixcan:
                 --pvalue_column pvalue  \
                 --model_db_snp_key varID  \
                 --keep_non_rsid  \
-                --additional_output  \
+            
+            (NR > FNR && FNR == 1) {{ print --additional_output  \
                 --overwrite  \
                 --throw  \
                 --model_db_path {input.model}  \
@@ -951,38 +952,47 @@ rule coloc2_gtex:
         eqtl="/sc/arion/projects/mscic1/resources/GTEx_Analysis_v8_eQTL/{tissue}.v8.signif_variant_gene_pairs.txt.gz",
         assoc="{phenotype}.GENESIS.assoc.txt"
     output:
-        "coloc2/{phenotype}.{tissue}.full_table.txt",
-        directory("coloc2/{phenotype}.{tissue}.coloc.output.perSNP")
+        "coloc2/{phenotype}.{tissue}.full_table.txt"
     params:
         prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
     resources:
         mem_mb=16000
-
     script: os.path.join(config["scriptsdir"],"do_coloc2_gtex.R")
 
 rule filter_mscic_nominal_eqtls:
     input:
         MSCIC_EQTL_DIR / "{race}/results/GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz",
+        MSCIC_EQTL_DIR / "{race}" / (SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.bim"),
     output:
         "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz"
+    resources:
+        mem_mb=16000
     shell:
-        "zcat {input[0]} | awk '($12 < 0.05)' | gzip -c > {output[0]}"
+        """
+        zcat {input[0]} | 
+        awk '(NR == FNR) {{ seen_rsids[$2] += 1; a1[$2] = $5; a2[$2] = $6 }}
+        (NR > FNR && FNR == 1) {{ print "pid", "chrom", "start", "end", "strand", "NVariants", "distToTopVar", "IDTopVar", "chrTopVar", "startTopVar", "endTopVar", "nominalPVal", "regressionSlope", "flag", "A1TopVar", "A2TopVar" }}
+        (NR > FNR && seen_rsids[$8] == 1 && $12 < 0.05) {{ print $0, a1[$8], a2[$8] }}' {input[1]} - | 
+        gzip -c > {output[0]}"""
 
 rule coloc2_mscic:
     input:
         eqtl="{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz",
-        bim=MSCIC_EQTL_DIR / "{race}" / (SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.bim"),
-        fam=MSCIC_EQTL_DIR / "{race}" / (SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.fam"),
+        samples=MSCIC_EQTL_DIR / "samples_to_keep_only_{race}.txt",
         assoc="{phenotype}.GENESIS.assoc.txt"
     output:
-        "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt",
-        directory("coloc2/{phenotype}.Whole_Blood_mscic{race}.output.perSNP")
+        "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt"
     params:
-        prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}"
+        prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}",
+        script_path = os.path.join(config['scriptsdir'], 'do_coloc2_mscic.R')
     resources:
-        mem_mb=16000
-
-    script: os.path.join(config["scriptsdir"],"do_coloc2_mscic.R")
+        mem_mb=16000,
+        cpus=128,
+        time_min=2160
+    shell: 
+        """ml openmpi
+           mpirun --mca mpi_warn_on_fork 0  Rscript {params.script_path} {config[scriptsdir]} {input.eqtl} {input.samples} {input.assoc} {params.prefix}
+       """
 
 
 rule coloc2_go_enrichment:

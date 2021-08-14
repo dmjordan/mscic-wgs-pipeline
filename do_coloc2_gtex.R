@@ -31,7 +31,7 @@ cat("loaded", nrow(assoc_df), "lines\n")
 assoc_df$type <- type
 coloc_results <- coloc.eqtl.biom(eqtl_df, assoc_df, outfolder="coloc2",
                                  prefix=snakemake@params[["prefix"]],  # cores=snakemake@resources[["cpus"]],
-                                 save.coloc.output=TRUE, match_snpid=FALSE)
+                                 save.coloc.output=FALSE, match_snpid=FALSE)
 
 if (!file.exists("coloc2")) dir.create("coloc2")
 write_tsv(coloc_results, paste0("coloc2/", snakemake@params[["prefix"]], ".full_table.txt"))
