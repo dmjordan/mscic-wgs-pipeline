@@ -4,7 +4,7 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  - doit
+  - snakemake
   - more-itertools
   - attrs
   - numpy
@@ -15,8 +15,8 @@ dependencies:
   - scipy
   - seaborn
   - matplotlib
+  - statsmodels
   - hail >= 0.2.58
-  - rpy2 >= 3.3.0
   - r-base
   - r-tidyverse
   - r-foreach
@@ -28,4 +28,5 @@ dependencies:
   - bioconductor-seqvartools
   - bioconductor-snprelate
   - bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
+  - bioconductor-genomicranges
   - r-qqman
