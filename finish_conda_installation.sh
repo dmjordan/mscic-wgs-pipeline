@@ -4,5 +4,4 @@ ml openmpi gcc
 #   --with-Rmpi-include=$OPENMPI_HOME/include           \
 #   --with-Rmpi-libpath=$OPENMPI_HOME/lib               \
 #   --with-Rmpi-type=OPENMPI"
-#echo 'install.packages("doMPI")' | R --vanilla
-R CMD INSTALL doMPI
+echo 'install.packages("doMPI")' | R --vanilla
