@@ -27,12 +27,12 @@ source(file.path(script_dir, "optim_function.R"))
 
 cat("loading eqtls from", eqtl_file, "\n")
 eqtl_df <- read_delim(eqtl_file, delim=" ",
-                    col_types=list(pid=col_character(), chrom=col_character(), strand=col_character(), IDTopVar=col_character(), chrTopVar=col_character(), A1TopVar=col_character(), A2TopVar=col_character(), .default=col_double()))
+                    col_types=list(ProbeID=col_character(), SNPID=col_character(),
+                                   CHR=col_character() POS=col_integer(), A1=col_character(), A2=col_character(),
+                                   BETA=col_number(), PVAL=col_number()))
 cat("loaded", nrow(eqtl_df), "lines\n")
 
-eqtl_df %>% 
-    transmute(ProbeID=pid, SNPID=IDTopVar, CHR=str_c("chr", chrTopVar), POS=startTopVar, A1=A1TopVar, A2=A2TopVar, BETA=regressionSlope, PVAL=nominalPVal) %>%
-    arrange(CHR, POS, A1, A2) -> eqtl_df
+#eqtl_df %<>% arrange(CHR, POS, A1, A2)
 
 cat("reading individuals list from", sample_file, "\n")
 read_tsv(sample_file, col_names=FALSE) %>%

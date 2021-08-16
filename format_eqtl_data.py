@@ -2,10 +2,9 @@ import pandas as pd
 import sys
 import typing
 
-from tqdm import tqdm
 import logging
 
-logging.basicConfig(level="DEBUG")
+logging.basicConfig(level="INFO")
 
 # declaring the snakemake object so my IDE stops yelling at me
 if typing.TYPE_CHECKING:
@@ -29,37 +28,28 @@ logging.info(f"loaded {len(bimfile)} alleles")
 bimfile = bimfile.loc[bimfile.index.drop_duplicates(keep=False)]  # drop multiallelic alleles
 logging.info(f"{len(bimfile)} alleles remain after filtering to biallelic")
 
-logging.info(f"streaming eqtls from {eqtl_path}")
-chunks = []
-row_count = 0
-matched_count = 0
-for chunk in tqdm(pd.read_csv(eqtl_path, sep=" ", header=None,
+logging.info(f"loading eqtls from {eqtl_path}")
+eqtl_file = pd.read_csv(eqtl_path, sep=" ", header=None,
                          names=["pid", "chrom", "start", "end", "strand", "NVariants",
                                 "distToTopVar", "IDTopVar", "chromTopVar", "startTopVar", "endTopVar",
                                 "nominalPVal", "regressionSlope", "flag"],
                          dtype={"pid": str, "chrom": str, "start": int, "end": int, "strand": str,
                                 "NVariants": int, "distToTopVar": int, "IDTopVar": str, "chromTopVar": str,
                                 "startTopVar": int, "endTopVar": int, "nominalPVal": float, "regressionSlope": float,
-                                "flag": int},
-                         chunksize=10000), desc="streaming eqtls"):
-    chunk = typing.cast(pd.DataFrame, chunk)
-    row_count += len(chunk)
-    merged_chunk = chunk.merge(bimfile, left_on=("chromTopVar", "startTopVar"), right_index=True,
-                               suffixes=(None, "_eqtl"))
-    matched_count += len(merged_chunk)
-    logging.debug(f"matched {len(merged_chunk)}/{len(chunk)} in chunk, cumulative {matched_count}/{row_count}")
-    merged_chunk = merged_chunk.rename(columns={  "pid": "ProbeID",
-                                                    "snpid": "SNPID",
-                                                    "chromTopVar": "CHR",
-                                                    "startTopVar": "POS",
-                                                    "regressionSlope": "BETA",
-                                                    "nominalPVal": "PVAL"})
-    merged_chunk = merged_chunk[["ProbeID", "SNPID", "CHR", "POS", "A1", "A2", "BETA", "PVAL"]]
-    chunks.append(merged_chunk)
-logging.info(f"read {row_count} records in {len(chunks)} chunks")
+                                "flag": int})
 
-result = pd.concat(chunks, ignore_index=True)
-logging.info(f"kept {len(result)} records after filters")
+merged_eqtls = eqtl_file.merge(bimfile, left_on=("chromTopVar", "startTopVar"), right_index=True,
+                               suffixes=(None, "_eqtl"))
+logging.debug(f"matched {len(merged_eqtls)}/{len(eqtl_file)}")
+merged_eqtls = merged_eqtls.rename(columns={  "pid": "ProbeID",
+                                                "snpid": "SNPID",
+                                                "chromTopVar": "CHR",
+                                                "startTopVar": "POS",
+                                                "regressionSlope": "BETA",
+                                                "nominalPVal": "PVAL"})
+merged_eqtls["CHR"] = merged_eqtls.CHR.str.add_prefix("chr")
+merged_eqtls = merged_eqtls[["ProbeID", "SNPID", "CHR", "POS", "A1", "A2", "BETA", "PVAL"]]
+
 logging.info(f"writing to {out_path}")
-result.to_csv(out_path, header=True, index=False, sep=" ")
+merged_eqtls.to_csv(out_path, header=True, index=False, sep=" ")
 logging.info(f"done!")

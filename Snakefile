@@ -959,21 +959,24 @@ rule coloc2_gtex:
         mem_mb=16000
     script: os.path.join(config["scriptsdir"],"do_coloc2_gtex.R")
 
-rule filter_mscic_nominal_eqtls:
+rule filter_mscic_eqtl_chunks:
     input:
-        MSCIC_EQTL_DIR / "{race}/results/GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz",
         MSCIC_EQTL_DIR / "{race}" / (SAMPLE_MATCHED_STEM + ".{race}_only.GWAS_filtered.vcf.bgz_qc4_only_{race}_gene.bim"),
+        MSCIC_EQTL_DIR / "{race}/results/GE_MAINCOVID_SV_30_eQTL_nominals_chunk{chunk}.txt.gz",
     output:
-        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz"
+        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals_chunk{chunk}.txt.gz"
     resources:
         mem_mb=16000
-    shell:
-        """
-        zcat {input[0]} | 
-        awk '(NR == FNR) {{ seen_rsids[$2] += 1; a1[$2] = $5; a2[$2] = $6 }}
-        (NR > FNR && FNR == 1) {{ print "pid", "chrom", "start", "end", "strand", "NVariants", "distToTopVar", "IDTopVar", "chrTopVar", "startTopVar", "endTopVar", "nominalPVal", "regressionSlope", "flag", "A1TopVar", "A2TopVar" }}
-        (NR > FNR && seen_rsids[$8] == 1 && $12 < 0.05) {{ print $0, a1[$8], a2[$8] }}' {input[1]} - | 
-        gzip -c > {output[0]}"""
+    script: os.path.join(config["scriptsdir"], "format_eqtl_data.py")
+
+rule gather_mscic_eqtl_chunks:
+    input:
+        expand("{race}_GE_MAINCOVID_SV_30_eQTL_nominals_chunk{chunk}.txt.gz",
+            chunk=list(range(5,26)) + list(range(31,301)),  # no idea why 1-4 and 26-30 are missing
+            allow_missing=True)
+    output:
+        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz}"
+    shell: "awk '(NR > 1 || NR == FNR)' {input} | gzip -c > {output[0]}"
 
 rule coloc2_mscic:
     input:
