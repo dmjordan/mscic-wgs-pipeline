@@ -26,14 +26,14 @@ bimfile = pd.read_csv(bim_path, sep="\t", header=None,
                              "A1": str, "A2": str},
                       index_col=["chrom", "pos"])
 logging.info(f"loaded {len(bimfile)} alleles")
-bimfile = bimfile.loc[bimfile.index.drop_duplicates(False)]  # drop multiallelic alleles
-logging.info(f"{len(bimfile)} biallelic alleles remain")
+bimfile = bimfile.loc[bimfile.index.drop_duplicates(keep=False)]  # drop multiallelic alleles
+logging.info(f"{len(bimfile)} alleles remain after filtering to biallelic")
 
 logging.info(f"streaming eqtls from {eqtl_path}")
 chunks = []
 row_count = 0
 matched_count = 0
-for chunk in tqdm(pd.read_csv(eqtl_path, sep="\t", header=None,
+for chunk in tqdm(pd.read_csv(eqtl_path, sep=" ", header=None,
                          names=["pid", "chrom", "start", "end", "strand", "NVariants",
                                 "distToTopVar", "IDTopVar", "chromTopVar", "startTopVar", "endTopVar",
                                 "nominalPVal", "regressionSlope", "flag"],
