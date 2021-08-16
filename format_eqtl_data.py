@@ -48,19 +48,18 @@ for chunk in tqdm(pd.read_csv(eqtl_path, sep=" ", header=None,
                                suffixes=(None, "_eqtl"))
     matched_count += len(merged_chunk)
     logging.debug(f"matched {len(merged_chunk)}/{len(chunk)} in chunk, cumulative {matched_count}/{row_count}")
-    merged_chunk = merged_chunk.reset_index().rename(columns={  "pid": "ProbeID",
-                                                                "snpid": "SNPID",
-                                                                "chrom": "CHR",
-                                                                "pos": "POS",
-                                                                "regressionSlope": "BETA",
-                                                                "nominalPVal": "PVAL"})[
-        ["ProbeID", "SNPID", "CHR", "POS", "A1", "A2", "BETA", "PVAL"]
-    ]
+    merged_chunk = merged_chunk.rename(columns={  "pid": "ProbeID",
+                                                    "snpid": "SNPID",
+                                                    "chromTopVar": "CHR",
+                                                    "startTopVar": "POS",
+                                                    "regressionSlope": "BETA",
+                                                    "nominalPVal": "PVAL"})
+    merged_chunk = merged_chunk[["ProbeID", "SNPID", "CHR", "POS", "A1", "A2", "BETA", "PVAL"]]
     chunks.append(merged_chunk)
 logging.info(f"read {row_count} records in {len(chunks)} chunks")
 
 result = pd.concat(chunks, ignore_index=True)
 logging.info(f"kept {len(result)} records after filters")
 logging.info(f"writing to {out_path}")
-result.to_csv(out_path)
+result.to_csv(out_path, header=True, index=False, sep=" ")
 logging.info(f"done!")
