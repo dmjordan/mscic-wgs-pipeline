@@ -975,8 +975,8 @@ rule gather_mscic_eqtl_chunks:
             chunk=list(range(5,26)) + list(range(31,301)),  # no idea why 1-4 and 26-30 are missing
             allow_missing=True)
     output:
-        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz}"
-    shell: "awk '(NR > 1 || NR == FNR)' {input} | gzip -c > {output[0]}"
+        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz"
+    shell: "zcat {input} | awk 'NR > 1 || $1 != \"ProbeID\"' | gzip -c > {output[0]}"
 
 rule coloc2_mscic:
     input:
@@ -989,8 +989,8 @@ rule coloc2_mscic:
         prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}",
         script_path = os.path.join(config['scriptsdir'], 'do_coloc2_mscic.R')
     resources:
-        mem_mb=16000,
-        cpus=128,
+        mem_mb=16384,
+        cpus=32,
         time_min=2160
     shell: 
         """ml openmpi

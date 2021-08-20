@@ -28,7 +28,7 @@ source(file.path(script_dir, "optim_function.R"))
 cat("loading eqtls from", eqtl_file, "\n")
 eqtl_df <- read_delim(eqtl_file, delim=" ",
                     col_types=list(ProbeID=col_character(), SNPID=col_character(),
-                                   CHR=col_character() POS=col_integer(), A1=col_character(), A2=col_character(),
+                                   CHR=col_character(), POS=col_integer(), A1=col_character(), A2=col_character(),
                                    BETA=col_number(), PVAL=col_number()))
 cat("loaded", nrow(eqtl_df), "lines\n")
 
