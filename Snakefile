@@ -969,34 +969,39 @@ rule filter_mscic_eqtl_chunks:
         mem_mb=16000
     script: os.path.join(config["scriptsdir"], "format_eqtl_data.py")
 
-rule gather_mscic_eqtl_chunks:
-    input:
-        expand("{race}_GE_MAINCOVID_SV_30_eQTL_nominals_chunk{chunk}.txt.gz",
-            chunk=list(range(5,26)) + list(range(31,301)),  # no idea why 1-4 and 26-30 are missing
-            allow_missing=True)
-    output:
-        "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz"
-    shell: "zcat {input} | awk 'NR > 1 || $1 != \"ProbeID\"' | gzip -c > {output[0]}"
+# rule gather_mscic_eqtl_chunks:
+#     input:
+#         expand("{race}_GE_MAINCOVID_SV_30_eQTL_nominals_chunk{chunk}.txt.gz",
+#             chunk=list(range(5,26)) + list(range(31,301)),  # no idea why 1-4 and 26-30 are missing
+#             allow_missing=True)
+#     output:
+#         "{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz"
+#     shell: "zcat {input} | awk 'NR > 1 || $1 != \"ProbeID\"' | gzip -c > {output[0]}"
 
-rule coloc2_mscic:
+rule coloc2_mscic_chunks:
     input:
-        eqtl="{race}_GE_MAINCOVID_SV_30_eQTL_nominals.all.chunks.txt.gz",
+        eqtl="{race}_GE_MAINCOVID_SV_30_eQTL_nominals_chunk{chunk}.txt.gz",
         samples=MSCIC_EQTL_DIR / "samples_to_keep_only_{race}.txt",
         assoc="{phenotype}.GENESIS.assoc.txt"
     output:
-        "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt"
+        "coloc2/{phenotype}.Whole_Blood_mscic{race}_chunk{chunk}.full_table.txt"
     params:
         prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}",
         script_path = os.path.join(config['scriptsdir'], 'do_coloc2_mscic.R')
     resources:
         mem_mb=16384,
-        cpus=32,
         time_min=2160
-    shell: 
-        """ml openmpi
-           mpirun --mca mpi_warn_on_fork 0  Rscript {params.script_path} {config[scriptsdir]} {input.eqtl} {input.samples} {input.assoc} {params.prefix}
-       """
+    script: "do_coloc2_mscic.R"
 
+rule gather_coloc2_chunks:
+    input:
+        expand("coloc2/{phenotype}.Whole_Blood_mscic{race}_chunk{chunk}.txt",
+            chunk=list(range(5,26)) + list(range(31,301)),# no idea why 1-4 and 26-30 are missing
+            allow_missing=True)
+    output:
+        "coloc2/{phenotype}.Whole_Blood_mscic{race}"
+    shell:
+        "awk 'NR == FNR || NR == 1' {input} > {output}"
 
 rule coloc2_go_enrichment:
     input:
