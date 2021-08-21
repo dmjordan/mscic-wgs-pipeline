@@ -986,20 +986,19 @@ rule coloc2_mscic_chunks:
     output:
         "coloc2/{phenotype}.Whole_Blood_mscic{race}_chunk{chunk}.full_table.txt"
     params:
-        prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}",
-        script_path = os.path.join(config['scriptsdir'], 'do_coloc2_mscic.R')
+        prefix=lambda wildcards: f"{wildcards.phenotype}.Whole_Blood_mscic{wildcards.race}_chunk{wildcards.chunk}"
     resources:
         mem_mb=16384,
         time_min=2160
-    script: "do_coloc2_mscic.R"
+    script: os.path.join(config['scriptsdir'], 'do_coloc2_mscic.R')
 
 rule gather_coloc2_chunks:
     input:
-        expand("coloc2/{phenotype}.Whole_Blood_mscic{race}_chunk{chunk}.txt",
+        expand("coloc2/{phenotype}.Whole_Blood_mscic{race}_chunk{chunk}.full_table.txt",
             chunk=list(range(5,26)) + list(range(31,301)),# no idea why 1-4 and 26-30 are missing
             allow_missing=True)
     output:
-        "coloc2/{phenotype}.Whole_Blood_mscic{race}"
+        "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt"
     shell:
         "awk 'NR == FNR || NR == 1' {input} > {output}"
 

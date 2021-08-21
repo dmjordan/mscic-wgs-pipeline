@@ -23,7 +23,7 @@ library(purrr)
 #output_prefix <- args[[5]]
 
 eqtl_file <- snakemake@input[["eqtl"]]
-sample_file <- snakemake@input[["bim"]]
+sample_file <- snakemake@input[["samples"]]
 assoc_file <- snakemake@input[["assoc"]]
 output_prefix <- snakemake@params[["prefix"]]
 
@@ -56,7 +56,7 @@ cat("loaded", nrow(assoc_df), "lines\n")
 assoc_df$type <- type
 if (!file.exists("coloc2")) dir.create("coloc2")
 #chunks <- eqtl_df %>% group_by(chunk=(row_number()-1) %/% (n()/length(cl))) %>%
-                    nest %>% pull(data)
+#                    nest %>% pull(data)
 #coloc_results <- foreach(eqtl_df=chunks,
 #        .combine=bind_rows) %dopar% {
     coloc_results <- coloc.eqtl.biom(eqtl_df, assoc_df, outfolder="coloc2",

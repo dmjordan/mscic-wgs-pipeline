@@ -860,6 +860,7 @@ res.all <- foreach(i=1:length(list.probes), .combine=rbind) %do% {
    outfname = paste(outfolder, prefix, '_summary.tab', sep='')
    write.table(x =  res.all , file = outfname, row.names = FALSE, quote = FALSE, sep = '\t')
    res.all <- data.frame(res.all)
+   if (nrow(res.all) == 0) { return(res.all) }
    res.all$ProbeID <- as.character(res.all$ProbeID)
    res.all$snp.eqtl <- as.character(res.all$snp.eqtl)
    res.all$best.causal <- as.character(res.all$best.causal)
