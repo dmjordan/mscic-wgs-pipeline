@@ -71,6 +71,12 @@ rule gwas_traits_of_interest:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
+rule gwas_traits_of_interest_force_pcs:
+    input:
+        expand("{phenotype}_FORCEPCS.GENESIS.{suffix}",
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
+
+
 rule biome_gwas_traits_of_interest:
     input:
         expand("BIOME_{phenotype}.GENESIS.{suffix}",
@@ -630,6 +636,27 @@ rule null_model_loo:
                                                 {SAMPLE_MATCHED_STEM} \\
                                                 {wildcards.phenotype_untagged} \\
                                                 _leave_{wildcards.sample}_out {wildcards.sample} 
+        """
+
+rule null_model_force_pcs:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        indiv_list="{race}.indiv_list.txt"
+    output:
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_FORCEPCS.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_single_race.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
+                                                {SAMPLE_MATCHED_STEM} \\
+                                                {wildcards.phenotype_untagged} \\
+                                                _FORCEPCS
         """
 
 rule run_gwas:
