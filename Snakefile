@@ -1000,7 +1000,7 @@ rule gather_coloc2_chunks:
     output:
         "coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt"
     shell:
-        "awk 'NR == FNR || NR == 1' {input} > {output}"
+        "awk 'NR == FNR || FNR > 1' {input} > {output}"
 
 rule coloc2_go_enrichment:
     input:
