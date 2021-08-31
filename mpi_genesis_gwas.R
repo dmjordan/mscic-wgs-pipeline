@@ -43,7 +43,7 @@ assoc <- foreach(gdsPath=gdsFiles,
                           effect.allele=altChar(seqData),
                           other.allele=refChar(seqData))
         assoc_subdf <- left_join(assoc_subdf, alleles)
-        if (nullmod$family == "binomial") { 
+        if (nullmod$family$family == "binomial") { 
             # calculate cases and controls
             seqSetFilter(seqData, variant.id=assoc_subdf$variant.id, 
                          sample.id=row.names(nullmod$outcome)[nullmod$outcome == 0])

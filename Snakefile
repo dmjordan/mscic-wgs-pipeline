@@ -74,7 +74,7 @@ rule gwas_traits_of_interest:
 rule gwas_traits_of_interest_force_pcs:
     input:
         expand("{phenotype}_FORCEPCS.GENESIS.{suffix}",
-            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
 
 rule biome_gwas_traits_of_interest:
@@ -373,6 +373,7 @@ rule pcair_race:
        genesis_cmd="pcair"
    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
+ruleorder: pcair_race > pcair
 
 rule race_prediction:
     input:
@@ -641,15 +642,14 @@ rule null_model_loo:
 rule null_model_force_pcs:
     input:
         DESIGN_MATRIX,
-        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
-        indiv_list="{race}.indiv_list.txt"
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
         rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_FORCEPCS.null.RDS"
     resources:
         cpus=128,
         mem_mb=16000
     params:
-        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_single_race.R")
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_force_pcs.R")
     shell:
         """
         ml openmpi
@@ -664,7 +664,7 @@ rule run_gwas:
         gds=f"{GWAS_STEM}.shards.seq.gds",
         null_model=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}{{phenotype_suffix}}.null.RDS"
     output:
-        txt="{{phenotype_untagged}}{{phenotype_suffix}}.GENESIS.assoc.txt"
+        txt="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.txt"
     resources:
         cpus=128,
         mem_mb=16000
