@@ -13,6 +13,17 @@ SAMPLE_MATCHED_STEM = QC_STEM + ".sample_matched"
 GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
 
+IMPUTED_VCF_PATTEN = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/imputation/{chrom}.dose.vcf.gz")
+IMPUTED_SPLITCHR_STEM = "MSCIC_Imputed.{chrom}"
+IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
+IMPUTED_SPLITCHR_GWAS_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
+IMPUTED_SPLITCHR_LD_STEM = IMPUTED_SPLITCHR_GWAS_STEM + ".LD_pruned"
+
+IMPUTED_CHRALL_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '.chrall')
+IMPUTED_CHRALL_GWAS_STEM = IMPUTED_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
+IMPUTED_CHRALL_LD_STEM = IMPUTED_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
+
+
 REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.{chrom}.vcf.gz")
 REGEN_WORKING_DIR = Path("/sc/private/regen/IPM-general/jordad05/mscic/")
 
@@ -173,6 +184,15 @@ rule biome_vcf2mt:
         mem_mb = 11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
+rule imputed_vcf2mt:
+    input:
+        vcf=IMPUTED_VCF_PATTEN
+    output:
+        mt=directory(IMPUTED_SPLITCHR_STEM + ".mt")
+    params:
+        pass_output=True,
+        hail_cmd="convert-vcf-to-mt",
+        hail_extra_args="--filter-multi"
 
 rule index_bgen:
     input:
@@ -224,6 +244,17 @@ rule plink2snpgds:
         genesis_cmd="plink2snpgds"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
+rule mt2bgen:
+    input:
+        mt="{prefix}.mt"
+    output:
+        multiext("{prefix}", ".bgen", ".sample")
+    params:
+        hail_cmd="convert-mt-to-bgen"
+    resources:
+        cpus=128,
+        mem_mb=11500
+    script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
 
 def original_vcf(wildcards):
     path_stem = Path(wildcards.prefix).stem

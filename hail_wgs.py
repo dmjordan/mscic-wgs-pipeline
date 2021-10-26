@@ -238,6 +238,14 @@ def convert_mt_to_plink(mt_path):
     bimfile.to_csv(mt_path.with_suffix(".bim"), sep="\t", header=False, index=False)
 
 
+@cli.command("convert-mt-to-bgen")
+@click.argument("mt_path", type=ClickPathlibPath())
+def convert_mt_to_plink(mt_path):
+    mt_path = mt_path.resolve()
+    mt = hl.read_matrix_table(str(mt_path))
+    hl.export_bgen(mt, str(mt_path.with_suffix("")))
+
+
 @cli.command("subset-mt-samples")
 @click.argument("mt_path", type=ClickPathlibPath())
 @click.argument("indiv_list", type=ClickPathlibPath())
