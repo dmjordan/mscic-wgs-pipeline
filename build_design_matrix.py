@@ -115,6 +115,20 @@ def build_design_matrix(covariates_path, design_matrix_path):
                       raw_table.columns.str.startswith("ENCOUNTER_COMORBID")]]\
     .any(axis=1).groupby(raw_table.Subject_ID).any().astype("boolean")
 
+    clinical_table["post_acute_symptoms"] = raw_table[
+        raw_table.columns[(raw_table.columns.str.startswith("Post_COVID19_Symptom") |
+                           raw_table.columns.str.startswith("Post_COVID19_New_Fatigue")) &
+                          ~raw_table.columns.str.contains("None")]
+    ].any(axis=1).groupby(raw_table.Subject_ID).any().astype("boolean")
+    clinical_table["post_acute_quality_of_life"] = raw_table["Post_COVID19_Quality_Of_Life"]\
+        .groupby(raw_table.Subject_ID).aggregate(lambda x: x.eq("Worse").any()).astype("boolean")
+    clinical_table["HGI_post_acute_NQ13"] = clinical_table["post_acute_symptoms"] | clinical_table["post_acute_quality_of_life"]
+
+    null_post_acute = raw_table.Post_COVID19_Event_Name.groupby(raw_table.Subject_ID).aggregate(lambda x: x.notnull().any())
+    clinical_table.loc[null_post_acute, "post_acute_symptoms"] = pd.na
+    clinical_table.loc[null_post_acute, "post_acute_quality_of_life"] = pd.na
+    clinical_table.loc[null_post_acute, "HGI_post_acute_NQ13"] = pd.na
+
     clinical_table = pd.concat([clinical_table, covid_only_table, icu_only_table], axis=1)
     clinical_table["deceased"] = clinical_table.deceased.astype("boolean")
     clinical_table["recovered"] = clinical_table.recovered.astype("boolean")
