@@ -14,7 +14,7 @@ GWAS_STEM = SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 LD_STEM = GWAS_STEM + ".LD_pruned"
 
 IMPUTED_VCF_PATTEN = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/imputation/{chrom}.dose.vcf.gz")
-IMPUTED_SPLITCHR_STEM = "MSCIC_Imputed.{chrom}"
+IMPUTED_SPLITCHR_STEM = "TOPMed_imputed.{chrom}.dose"
 IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
 IMPUTED_SPLITCHR_GWAS_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 IMPUTED_SPLITCHR_LD_STEM = IMPUTED_SPLITCHR_GWAS_STEM + ".LD_pruned"
