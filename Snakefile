@@ -193,6 +193,8 @@ rule imputed_vcf2mt:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt",
         hail_extra_args="--filter-multi"
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
 
 rule index_bgen:
     input:
