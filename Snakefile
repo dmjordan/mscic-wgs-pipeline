@@ -193,6 +193,9 @@ rule imputed_vcf2mt:
         pass_output=True,
         hail_cmd="convert-vcf-to-mt",
         hail_extra_args="--filter-multi"
+    resources:
+        cpus=16,
+        mem_mb = 11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 
@@ -254,8 +257,8 @@ rule mt2bgen:
     params:
         hail_cmd="convert-mt-to-bgen"
     resources:
-        cpus=128,
-        mem_mb=11500
+        cpus=16,
+        mem_mb=96000
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
 
 def original_vcf(wildcards):
