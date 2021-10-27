@@ -146,7 +146,7 @@ def match_samples(covariates_path, mt_path):
     # reindex to subjects rather than samples
     # which requires removing duplicated subjects
     mt = mt.filter_cols(~mt.s.endswith("a"))
-    mt = mt.annotate_cols(Subject_ID=mt.s.split("T")[0])
+    mt = mt.annotate_cols(Subject_ID=mt.s.split("_")[-1].split("T")[0])
     mt = mt.rename({"Subject_ID": "s", "s": "sample_id"})
     mt = mt.key_cols_by("s")
 
