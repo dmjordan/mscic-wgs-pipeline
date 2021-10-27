@@ -15,6 +15,7 @@ LD_STEM = GWAS_STEM + ".LD_pruned"
 
 IMPUTED_VCF_PATTEN = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/imputation/{chrom}.dose.vcf.gz")
 IMPUTED_SPLITCHR_STEM = "TOPMed_imputed.{chrom}.dose"
+IMPUTED_CHRALL_STEM = "TOPMed_imputed.chrall.dose"
 IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
 IMPUTED_SPLITCHR_GWAS_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 IMPUTED_SPLITCHR_LD_STEM = IMPUTED_SPLITCHR_GWAS_STEM + ".LD_pruned"
@@ -350,6 +351,20 @@ rule match_samples:
         cpus = 128,
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+rule imputed_match_samples:
+    input:
+        covariates = COVARIATES_FILE,
+        mt = f"{IMPUTED_CHRALL_STEM}.mt"
+    output:
+        mt=directory(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.mt")
+    params:
+        hail_cmd="match-samples"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
 
 rule biome_sample_list:
     input:
