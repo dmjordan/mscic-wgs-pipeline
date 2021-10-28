@@ -615,6 +615,27 @@ rule biome_design_matrix:
     script:
         os.path.join(config["scriptsdir"], "build_biome_design_matrix.py")
 
+rule hgi_regenie_phenotypes:
+    input: DESIGN_MATRIX
+    output: "hgi_post_acute_NQ13.phenotype"
+    run:
+        import pandas as pd
+        table = pd.read_csv(input[0])
+        table["HGI_post_acute_NQ13"].to_csv(output[0], sep=" ", index_label="IID")
+
+rule hgi_regenie_covars:
+    input: DESIGN_MATRIX
+    output: "hgi_covars.phenotype"
+    run:
+        import pandas as pd
+        table = pd.read_csv(input[0])
+        covars = ["age", "sex", "age_sex", "age_squared", "recruitment_date"]
+        covars += list(table.columns[table.columns.str.startswith("flowcell_")])
+        covars += [f"pc{i}" for i in range(1,10)]
+        table[covars].to_csv(output[0], sep=" ", index_label="IID")
+
+
+
 rule null_model:
     input:
         DESIGN_MATRIX,
