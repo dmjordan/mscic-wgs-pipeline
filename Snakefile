@@ -16,13 +16,12 @@ LD_STEM = GWAS_STEM + ".LD_pruned"
 IMPUTED_VCF_PATTEN = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/imputation/{chrom}.dose.vcf.gz")
 IMPUTED_SPLITCHR_STEM = "TOPMed_imputed.{chrom}.dose"
 IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
-IMPUTED_SPLITCHR_GWAS_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
-IMPUTED_SPLITCHR_LD_STEM = IMPUTED_SPLITCHR_GWAS_STEM + ".LD_pruned"
+IMPUTED_SPLITCHR_RACE_FILTERED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".{race}_only"
+
 
 IMPUTED_CHRALL_STEM = IMPUTED_SPLITCHR_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '.chrall')
-IMPUTED_CHRALL_GWAS_STEM = IMPUTED_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
-IMPUTED_CHRALL_LD_STEM = IMPUTED_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
+IMPUTED_CHRALL_RACE_FILTERED_STEM = IMPUTED_SPLITCHR_RACE_FILTERED_STEM.replace('.{chrom}', '.chrall')
 
 
 REGEN_EXOME_PATTERN = Path("/sc/private/regen/data/Regeneron/SINAI_Freeze_Two_pVCF/data/pVCF/QC_passed/freeze2-ontarget/biallelic/SINAI_Freeze_Two.GL.pVCF.PASS.onTarget.biallelic.{chrom}.vcf.gz")
@@ -616,17 +615,17 @@ rule biome_design_matrix:
     script:
         os.path.join(config["scriptsdir"], "build_biome_design_matrix.py")
 
-rule hgi_regenie_phenotypes:
+rule regenie_phenotypes:
     input: DESIGN_MATRIX
-    output: "hgi_post_acute_NQ13.phenotype"
+    output: "regenie_phenotypes.txt"
     run:
         import pandas as pd
         table = pd.read_csv(input[0])
         table["HGI_post_acute_NQ13"].to_csv(output[0], sep=" ", index_label="IID")
 
-rule hgi_regenie_covars:
+rule regenie_covars:
     input: DESIGN_MATRIX
-    output: "hgi_covars.phenotype"
+    output: "regenie_covars.txt"
     run:
         import pandas as pd
         table = pd.read_csv(input[0])
@@ -635,7 +634,74 @@ rule hgi_regenie_covars:
         covars += [f"pc{i}" for i in range(1,10)]
         table[covars].to_csv(output[0], sep=" ", index_label="IID")
 
+rule regenie_step1:
+    output:
+        "{mt_stem}.{chrom}_{phenotype,[A-Za-z0-9_]+}.regenie_step1_pred.list"
+    input:
+        bgen="{mt_stem}.bgen",
+        sample= "{mt_stem}.sample",
+        pheno="regenie_phenotypes.txt",
+        covar="regenie_covars.txt"
+    resources:
+        cpus=32,
+        single_host=1,
+        mem_mb=16000
+    params:
+        out_stem = lambda wildcards, output: output[0][:-10]
+    shell: r"""
+    ml regenie
+    regenie \
+        --step 1 \
+        --bgen {input.bgen} \
+        --sample {input.sample} \
+        --phenoFile {input.pheno} \
+        --phenoCol {wildcards.phenotype} \
+        --covarFile {input.covar} \
+        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell_.+/) {{ printf("%s,",$i) }} exit; }}' {input.covar}),pc{{1:10}} \
+        --catCovarList sex \
+        --bt \
+        --bsize 1000 \
+        --loocv \
+        --threads {resources.cpus} \
+        --out {params.out_stem} \
+        --strict --gz
+    """
 
+rule regenie_step2:
+    output:
+        "{mt_stem}.{chrom}_{phenotype,[A-Za-z0-9_]+}.regenie.gz"
+    input:
+        bgen="{mt_stem}.bgen",
+        sample= "{mt_stem}.sample",
+        pheno="regenie_phenotypes.txt",
+        covar="regenie_covars.txt",
+        step1="{mt_stem}.{chrom}_{phenotype}.regenie_step1_pred.list"
+    resources:
+        cpus=32,
+        single_host=1,
+        mem_mb=16000
+    params:
+        out_stem = lambda wildcards, output: output[0][:-10]
+    shell: r"""
+    ml regenie
+    regenie \
+        --step 2 \
+        --bgen {input.bgen} \
+        --sample {input.sample} \
+        --chr {wildcards.chrom} \
+        --phenoFile {input.pheno} \
+        --phenoCol {wildcards.phenotype} \
+        --covarFile {input.covar} \
+        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell_.+/) {{ printf("%s,",$i) }} exit; }}' {input.covar}),pc{{1:10}} \
+        --catCovarList sex \
+        --bt --spa \
+        --pred {step1} \
+        --bsize 1000 \
+        --threads {resources.cpus} \
+        --out {params.out_stem} \
+        --strict --gz \
+        --write-samples
+    """
 
 rule null_model:
     input:
