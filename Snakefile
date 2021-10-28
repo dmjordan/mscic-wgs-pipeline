@@ -65,9 +65,11 @@ ALL_TISSUES = [model.with_suffix("").name[6:] for model in MASHR_MODELS_DIR.glob
 
 MSCIC_EQTL_DIR = Path("/sc/arion/projects/mscic1/results/Noam/MainCovid/QTL/")
 
+ADMIXTURE_FILE = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/scratch/merge_mscic/merged_merged.1kg.gannasnps.chr.pos.ref.alt.updatedIDs.matrix")
+
 wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
-    race=r"WHITE|BLACK|ASIAN|HISPANIC|ALL",
+    race=r"WHITE|BLACK|ASIAN|HISPANIC|EUR|AFR|AMR|EAS|SAS|ALL",
     phenotype_untagged=r"[a-z_]+",
     phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
@@ -435,6 +437,10 @@ rule race_prediction:
         table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.csv"
     script: os.path.join(config["scriptsdir"], "race_prediction.py")
 
+rule pop_list:
+    input: ADMIXTURE_FILE
+    output: "{pop}.indiv_list.txt"
+    shell: "awk '(NR > 1 && $7 == \"{pop}\") {{ print $6 }}' {input} > {output}"
 
 rule split_races:
     input:
