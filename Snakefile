@@ -357,8 +357,8 @@ rule match_samples:
 rule imputed_match_samples:
     input:
         lambda wildcards: [COVARIATES_FILE,
-                           IMPUTED_SPLITCHR_STEM.format(chrom=wildcards.chrom)] + \
-            [IMPUTED_SPLITCHR_STEM.format(chrom="chrX")] if wildcards.chrom != "chrX" else []
+                           IMPUTED_SPLITCHR_STEM.format(chrom=wildcards.chrom) + ".mt"] + \
+            [IMPUTED_SPLITCHR_STEM.format(chrom="chrX") + ".mt"] if wildcards.chrom != "chrX" else []
     output:
         mt=directory(f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.mt")
     params:
