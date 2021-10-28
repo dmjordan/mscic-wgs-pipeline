@@ -444,10 +444,10 @@ rule pop_list:
 
 rule split_races:
     input:
-        mt=f"{SAMPLE_MATCHED_STEM}.mt",
+        mt=f"{prefix}.mt",
         indiv_list="{race}.indiv_list.txt"
     output:
-        mt=directory(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.mt")
+        mt=directory(f"{prefix}.{{race}}_only.mt")
     params:
         hail_cmd="subset-mt-samples",
         pass_output=True
