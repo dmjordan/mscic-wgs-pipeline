@@ -460,6 +460,43 @@ rule pcrelate:
         genesis_cmd="pcrelate"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
+# 1000 Genomes
+rule bcf_1000g:
+    input:
+        "/sc/arion/projects/mscic1/resources/1000G/ALL.chr{chr,[0-9XYM]+}.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
+    output:
+        "1000G_chr{chr}.bcf"
+    shell: """ml bcftools/1.12
+    bcftools annotate --rename-chrs <(echo "{chr} chr{chr}") {input} -Ob -o {output}
+    """
+
+rule bcf_index:
+    input: "{prefix}.bcf"
+    output: "{prefix}.bcf.csi"
+    shell: """ml bcftools/1.12
+    bcftools index {input}"""
+
+
+rule intersect_1000G:
+    input:
+        bcf="1000G_{chrom}.bcf",
+        bcf_index="1000G_{chrom}.bcf.csi",
+        vcf="{prefix}.vcf.bgz",
+        vcf_index="{prefix}.vcf.bgz.tbi"
+    output:
+        expand("{prefix}.1000G_intersect.{chrom}/{fileno}.bcf", fileno=["0000", "0001", "0002", "0003"], allow_missing=True)
+    shell: """ml bcftools/1.12
+    bcftools isec {input.bcf} {input.vcf} -r {chrom} -p {prefix}_1000G_intersect -O b"""
+
+rule merge_1000G:
+    input:
+        expand("{prefix}.1000G_intersect.{chrom}/{fileno}.bcf", fileno=["0002", "0003"], allow_missing=True),
+        expand("{prefix}.1000G_intersect.{chrom}/{fileno}.bcf.csi", fileno=["0002", "0003"], allow_missing=True)
+    output:
+        "{prefix}.1000G_intersect.{chrom}.vcf.bgz"
+    shell: """ml bcftools/1.12
+    bcftools merge {input[0]} {input[1]} -Oz -o {output}"""
+
 # variant subsets
 
 rule gwas_filter:
