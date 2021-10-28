@@ -136,7 +136,8 @@ def run_hail_qc(mt_path):
 @cli.command("match-samples")
 @click.argument("covariates_path", type=ClickPathlibPath())
 @click.argument("mt_path", type=ClickPathlibPath())
-def match_samples(covariates_path, mt_path):
+@click.argument("external_X", type=ClickPathlibPath(), default=None)
+def match_samples(covariates_path, mt_path, external_X=None):
     mt_path = mt_path.resolve()
     covariates_path = covariates_path.resolve()
     output_path = mt_path.with_suffix(".sample_matched.mt")
@@ -159,9 +160,15 @@ def match_samples(covariates_path, mt_path):
     missing_samples = mt.filter_cols(~hl.set(all_clinical_samples).contains(mt.s))
     mt = mt.anti_join_cols(missing_samples.cols())
 
-    # impute sex 
-    sex_table = hl.impute_sex(mt.GT, male_threshold=0.6, female_threshold=0.5)
-    mt = mt.annotate_cols(is_female=sex_table[mt.s].is_female)
+    # impute sex
+    if external_X is not None:
+        external_X = external_X.resolve()
+        chrX_mt = hl.read_matrix_table(str(external_X))
+        sex_table = hl.impute_sex(chrX_mt.GT, male_threshold=0.6, female_threshold=0.5)
+        mt = mt.annotate_cols(is_female=chrX_mt[mt.sample_id].is_female)
+    else:
+        sex_table = hl.impute_sex(mt.GT, male_threshold=0.6, female_threshold=0.5)
+        mt = mt.annotate_cols(is_female=sex_table[mt.s].is_female)
 
     # match sex to clinical table
     reported_sex=covariates_table.group_by("Subject_ID").aggregate(sex=hl.literal("/").join(

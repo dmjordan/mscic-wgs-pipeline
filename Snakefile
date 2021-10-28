@@ -15,11 +15,11 @@ LD_STEM = GWAS_STEM + ".LD_pruned"
 
 IMPUTED_VCF_PATTEN = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/imputation/{chrom}.dose.vcf.gz")
 IMPUTED_SPLITCHR_STEM = "TOPMed_imputed.{chrom}.dose"
-IMPUTED_CHRALL_STEM = "TOPMed_imputed.chrall.dose"
 IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
 IMPUTED_SPLITCHR_GWAS_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 IMPUTED_SPLITCHR_LD_STEM = IMPUTED_SPLITCHR_GWAS_STEM + ".LD_pruned"
 
+IMPUTED_CHRALL_STEM = IMPUTED_SPLITCHR_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_GWAS_STEM = IMPUTED_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_LD_STEM = IMPUTED_SPLITCHR_LD_STEM.replace('.{chrom}', '.chrall')
@@ -354,10 +354,11 @@ rule match_samples:
 
 rule imputed_match_samples:
     input:
-        covariates = COVARIATES_FILE,
-        mt = f"{IMPUTED_CHRALL_STEM}.mt"
+        lambda wildcards: [COVARIATES_FILE,
+                           IMPUTED_SPLITCHR_STEM.format(chrom=wildcards.chrom)] + \
+            [IMPUTED_SPLITCHR_STEM.format(chrom="chrX")] if wildcards.chrom != "chrX" else []
     output:
-        mt=directory(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.mt")
+        mt=directory(f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.mt")
     params:
         hail_cmd="match-samples"
     resources:
