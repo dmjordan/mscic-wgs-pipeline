@@ -70,6 +70,7 @@ ADMIXTURE_FILE = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/scratch/mer
 wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
     race=r"WHITE|BLACK|ASIAN|HISPANIC|EUR|AFR|AMR|EAS|SAS|ALL",
+    population=r"EUR|AFR|AMR|EAS|SAS",
     phenotype_untagged=r"[a-z_]+",
     phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
@@ -439,8 +440,8 @@ rule race_prediction:
 
 rule pop_list:
     input: ADMIXTURE_FILE
-    output: "{pop}.indiv_list.txt"
-    shell: "awk '(NR > 1 && $7 == \"{pop}\") {{ print $6 }}' {input} > {output}"
+    output: "{population}.indiv_list.txt"
+    shell: "awk '(NR > 1 && $7 == \"{population}\") {{ print $6 }}' {input} > {output}"
 
 rule split_races:
     input:
