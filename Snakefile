@@ -631,6 +631,7 @@ rule chrom_merge:
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
 
 ruleorder: chrom_merge > biome_match_samples
+ruleorder: chrom_merge > split_races
 ruleorder: chrom_merge > gwas_filter
 ruleorder: chrom_merge > prune_ld
 
