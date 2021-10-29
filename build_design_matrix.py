@@ -124,7 +124,7 @@ def build_design_matrix(covariates_path, design_matrix_path):
         .groupby(raw_table.Subject_ID).aggregate(lambda x: x.eq("Worse").any()).astype("boolean")
     clinical_table["HGI_post_acute_NQ13"] = clinical_table["post_acute_symptoms"] | clinical_table["post_acute_quality_of_life"]
 
-    null_post_acute = raw_table.Post_COVID19_Event_Name.groupby(raw_table.Subject_ID).aggregate(lambda x: x.notnull().any())
+    null_post_acute = raw_table.Post_COVID19_Event_Name.groupby(raw_table.Subject_ID).aggregate(lambda x: x.isnull().all())
     clinical_table.loc[null_post_acute, "post_acute_symptoms"] = np.nan
     clinical_table.loc[null_post_acute, "post_acute_quality_of_life"] = np.nan
     clinical_table.loc[null_post_acute, "HGI_post_acute_NQ13"] = np.nan
