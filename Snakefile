@@ -678,7 +678,7 @@ rule regenie_covars:
         table = pd.read_csv(input[0], index_col=0)
         covars = ["age", "sex", "age_sex", "age_squared", "recruitment_date"]
         covars += list(table.columns[table.columns.str.startswith("flowcell_")])
-        covars += [f"pc{i}" for i in range(1,10)]
+        covars += [f"pc{i}" for i in range(1,11)]
         covar_table = table[covars]
         covar_table.insert(0, "IID", table.index)
         covar_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA")
@@ -706,7 +706,7 @@ rule regenie_step1:
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit }}' {input.covar}),pc{{1:10}} \
+        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit }}' {input.covar})pc{{1:10}} \
         --catCovarList sex \
         --bt \
         --bsize 1000 \
@@ -741,10 +741,10 @@ rule regenie_step2:
         --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit; }}' {input.covar}),pc{{1:10}} \
         --catCovarList sex \
         --bt --spa \
-        --pred {step1} \
+        --pred {input.step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
-        --out {mt_stem}.regenie \
+        --out {wildcards.mt_stem}.regenie \
         --strict --gz \
         --write-samples
     """
