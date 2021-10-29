@@ -241,8 +241,8 @@ def build_design_matrix(covariates_path, design_matrix_path):
     pca_table.columns = [f"pc{i}" for i in range(1, len(pca_table.columns) + 1)]
     pca_table = pca_table.iloc[:, :10]
 
-    clinical_table = clinical_table.join(flowcells, how="inner").join(pca_table,
-                                                                      how="inner")  # .join(race, how="inner")
+    clinical_table = clinical_table.join(flowcells, how="left").join(pca_table,
+                                                                     how="left")  # .join(race, how="inner")
     for race in "white", "black", "asian", "hispanic":
         race_pca_table = pd.read_csv(f"625_Samples.cohort.QC_filtered.sample_matched.{race.upper()}_only.PCAir.txt", delim_whitespace=True,
                                 index_col="Subject_ID")
