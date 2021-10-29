@@ -231,6 +231,10 @@ def build_design_matrix(covariates_path, design_matrix_path):
     flowcells = flowcells.str.get_dummies(sep="+")
     flowcells.columns = "flowcell_" + flowcells.columns
 
+    gsa_batches = pd.read_csv("gsa_batches.csv", header=None).drop_duplicates().set_index(0)[1]
+    gsa_batches = raw_table.Uncorrected_Blood_Sample.map(gsa_batches).dropna().groupby(raw_table.Subject_ID).first()
+    clinical_table["gsa_batch"] = gsa_batches
+
     # batches = pd.read_csv("batches.csv", header=None, index_col=0, squeeze=True)
     # batches = batches.drop("PICR7147T1a")
     # batches = batches.str.get_dummies(sep="+")
@@ -243,13 +247,21 @@ def build_design_matrix(covariates_path, design_matrix_path):
 
     clinical_table = clinical_table.join(flowcells, how="left").join(pca_table,
                                                                      how="left")  # .join(race, how="inner")
-    for race in "white", "black", "asian", "hispanic":
+    for race in "white", "black", "asian", "hispanic", 'eur', 'afr', 'amr', 'eas', 'sas':
         race_pca_table = pd.read_csv(f"625_Samples.cohort.QC_filtered.sample_matched.{race.upper()}_only.PCAir.txt", delim_whitespace=True,
                                 index_col="Subject_ID")
         race_pca_table.columns = [f"{race}_pc{i}" for i in range(1, len(race_pca_table.columns) + 1)]
         race_pca_table = race_pca_table.iloc[:, :10]
 
         clinical_table = clinical_table.join(race_pca_table, how="left")
+
+        race_pca_table_imputed = pd.read_csv(f"TOPMed_imputed.chrall.sample_matched.{race.upper()}_only.PCAir.txt",
+                                     delim_whitespace=True,
+                                     index_col="Subject_ID")
+        race_pca_table_imputed.columns = [f"{race}_pc{i}_imputed" for i in range(1, len(race_pca_table_imputed.columns) + 1)]
+        race_pca_table_imputed = race_pca_table_imputed.iloc[:, :10]
+
+        clinical_table = clinical_table.join(race_pca_table_imputed, how="left")
 
     clinical_table.to_csv(design_matrix_path)
     return {'phenotypes': all_phenotypes}

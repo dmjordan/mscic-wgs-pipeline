@@ -640,8 +640,10 @@ ruleorder: chrom_merge > prune_ld
 rule design_matrix:
     input:
         COVARIATES_FILE,
-        expand(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir.txt", race=["WHITE", "BLACK", "ASIAN", "HISPANIC"]),
+        expand(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir.txt", race=["WHITE", "BLACK", "ASIAN", "HISPANIC", "EUR", "AFR", "AMR", "EAS", "SAS"]),
+        expand(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir.txt", race=["WHITE", "BLACK", "ASIAN", "HISPANIC", "EUR", "AFR", "AMR", "EAS", "SAS"]),
         flowcells="flowcells.csv",
+        gsa_batches="gsa_batches.csv",
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt",
         bvl="MSCIC_blood_viral_load_predictions.csv"
     output:
@@ -676,19 +678,22 @@ rule regenie_covars:
     run:
         import pandas as pd
         table = pd.read_csv(input[0], index_col=0)
-        covars = ["age", "sex", "age_sex", "age_squared", "recruitment_date"]
+        covars = ["age", "sex", "age_sex", "age_squared", "recruitment_date", "gsa_batch"]
         covars += list(table.columns[table.columns.str.startswith("flowcell_")])
         covars += [f"pc{i}" for i in range(1,11)]
+        for race in "eur", "afr", "amr", "sas", "eas", "white", "black", "hispanic", "asian":
+            covars += [f"{race}_pc{i}" for i in range(1,11)]
+            covars += [f"{race}_pc{i}_imputed" for i in range(1,11)]
         covar_table = table[covars]
         covar_table.insert(0, "IID", table.index)
         covar_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA")
 
 rule regenie_step1:
     output:
-        "{mt_stem}.{phenotype,[A-Za-z0-9_]+}.regenie_step1_pred.list"
+        "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype,[A-Za-z0-9_]+}.regenie_step1_pred.list"
     input:
-        bgen="{mt_stem}.bgen",
-        sample= "{mt_stem}.sample",
+        bgen="{prefix}.{chrom}.{suffix}.{race}_only.bgen",
+        sample= "{prefix}.{chrom}.{suffix}.{race}_only.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -696,7 +701,8 @@ rule regenie_step1:
         single_host=1,
         mem_mb=16000
     params:
-        out_stem = lambda wildcards, output: output[0][:-10]
+        out_stem = lambda wildcards: f"{wildcards.prefix}.{wildcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.{wildcards.phenotype}",
+        race_lower= lambda wildcards: wildcards.race.lower()
     shell: r"""
     ml regenie/2.2.4
     regenie \
@@ -706,8 +712,8 @@ rule regenie_step1:
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit }}' {input.covar})pc{{1:10}} \
-        --catCovarList sex \
+        --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed \
+        --catCovarList sex,gsa_batch \
         --bt \
         --bsize 1000 \
         --loocv \
@@ -718,17 +724,19 @@ rule regenie_step1:
 
 rule regenie_step2:
     output:
-        "{mt_stem}.regenie_{phenotype,[A-Za-z0-9_]+}.regenie.gz"
+        "{prefix}.{chrom}.{suffix}.{race}_only.regenie_{phenotype,[A-Za-z0-9_]+}.regenie.gz"
     input:
-        bgen="{mt_stem}.bgen",
-        sample= "{mt_stem}.sample",
+        bgen="{prefix}.{chrom}.{suffix}.{race}_only.bgen",
+        sample= "{prefix}.{chrom}.{suffix}.{race}_only.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1="{mt_stem}.{phenotype}.regenie_step1_pred.list"
+        step1="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}.regenie_step1_pred.list"
     resources:
         cpus=32,
         single_host=1,
         mem_mb=16000
+    params:
+        race_lower=lambda wildcards: wildcards.race.lower()
     shell: r"""
     ml regenie
     regenie \
@@ -738,13 +746,14 @@ rule regenie_step2:
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit; }}' {input.covar}),pc{{1:10}} \
-        --catCovarList sex \
+        --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed \
+        --catCovarList sex,gsa_batch \
+        --chr {wildcards.chrom} \
         --bt --spa \
         --pred {input.step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
-        --out {wildcards.mt_stem}.regenie \
+        --out {wildcards.prefix}.{wilcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.regenie \
         --strict --gz \
         --write-samples
     """
