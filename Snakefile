@@ -441,7 +441,7 @@ rule race_prediction:
 rule pop_list:
     input: ADMIXTURE_FILE
     output: "{population}.indiv_list.txt"
-    shell: "awk '(NR > 1 && $7 == \"{population}\") {{ print $6 }}' {input} > {output}"
+    shell: "awk '(NR == 1) {{ print \"Subject_ID\" }} (NR > 1 && $7 == \"{wildcards.population}\") {{ print $6 }}' {input} > {output}"
 
 rule split_races:
     input:
@@ -664,23 +664,28 @@ rule regenie_phenotypes:
     output: "regenie_phenotypes.txt"
     run:
         import pandas as pd
-        table = pd.read_csv(input[0])
-        table["HGI_post_acute_NQ13"].to_csv(output[0], sep=" ", index_label="IID")
+        table = pd.read_csv(input[0], index_col=0)
+        phenotypes = ["HGI_post_acute_NQ13"]
+        pheno_table = table[phenotypes].astype(float)
+        pheno_table.insert(0, "IID", table.index)
+        pheno_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA", float_format="{:.0f}".format)
 
 rule regenie_covars:
     input: DESIGN_MATRIX
     output: "regenie_covars.txt"
     run:
         import pandas as pd
-        table = pd.read_csv(input[0])
+        table = pd.read_csv(input[0], index_col=0)
         covars = ["age", "sex", "age_sex", "age_squared", "recruitment_date"]
         covars += list(table.columns[table.columns.str.startswith("flowcell_")])
         covars += [f"pc{i}" for i in range(1,10)]
-        table[covars].to_csv(output[0], sep=" ", index_label="IID")
+        covar_table = table[covars]
+        covar_table.insert(0, "IID", table.index)
+        covar_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA")
 
 rule regenie_step1:
     output:
-        "{mt_stem}.{chrom}_{phenotype,[A-Za-z0-9_]+}.regenie_step1_pred.list"
+        "{mt_stem}.{phenotype,[A-Za-z0-9_]+}.regenie_step1_pred.list"
     input:
         bgen="{mt_stem}.bgen",
         sample= "{mt_stem}.sample",
@@ -693,7 +698,7 @@ rule regenie_step1:
     params:
         out_stem = lambda wildcards, output: output[0][:-10]
     shell: r"""
-    ml regenie
+    ml regenie/2.2.4
     regenie \
         --step 1 \
         --bgen {input.bgen} \
@@ -701,7 +706,7 @@ rule regenie_step1:
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell_.+/) {{ printf("%s,",$i) }} exit; }}' {input.covar}),pc{{1:10}} \
+        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit }}' {input.covar}),pc{{1:10}} \
         --catCovarList sex \
         --bt \
         --bsize 1000 \
@@ -713,36 +718,33 @@ rule regenie_step1:
 
 rule regenie_step2:
     output:
-        "{mt_stem}.{chrom}_{phenotype,[A-Za-z0-9_]+}.regenie.gz"
+        "{mt_stem}.regenie_{phenotype,[A-Za-z0-9_]+}.regenie.gz"
     input:
         bgen="{mt_stem}.bgen",
         sample= "{mt_stem}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1="{mt_stem}.{chrom}_{phenotype}.regenie_step1_pred.list"
+        step1="{mt_stem}.{phenotype}.regenie_step1_pred.list"
     resources:
         cpus=32,
         single_host=1,
         mem_mb=16000
-    params:
-        out_stem = lambda wildcards, output: output[0][:-10]
     shell: r"""
     ml regenie
     regenie \
         --step 2 \
         --bgen {input.bgen} \
         --sample {input.sample} \
-        --chr {wildcards.chrom} \
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell_.+/) {{ printf("%s,",$i) }} exit; }}' {input.covar}),pc{{1:10}} \
+        --covarColList age,age_squared,age_sex,recruitment_date,$(awk 'NR == 1 {{ for (i=1;i<=NF;i++) {{ if ($i ~ /^flowcell/) {{ printf("%s,",$i) }} }} exit; }}' {input.covar}),pc{{1:10}} \
         --catCovarList sex \
         --bt --spa \
         --pred {step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
-        --out {params.out_stem} \
+        --out {mt_stem}.regenie \
         --strict --gz \
         --write-samples
     """

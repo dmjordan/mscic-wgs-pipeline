@@ -125,9 +125,9 @@ def build_design_matrix(covariates_path, design_matrix_path):
     clinical_table["HGI_post_acute_NQ13"] = clinical_table["post_acute_symptoms"] | clinical_table["post_acute_quality_of_life"]
 
     null_post_acute = raw_table.Post_COVID19_Event_Name.groupby(raw_table.Subject_ID).aggregate(lambda x: x.notnull().any())
-    clinical_table.loc[null_post_acute, "post_acute_symptoms"] = pd.na
-    clinical_table.loc[null_post_acute, "post_acute_quality_of_life"] = pd.na
-    clinical_table.loc[null_post_acute, "HGI_post_acute_NQ13"] = pd.na
+    clinical_table.loc[null_post_acute, "post_acute_symptoms"] = np.nan
+    clinical_table.loc[null_post_acute, "post_acute_quality_of_life"] = np.nan
+    clinical_table.loc[null_post_acute, "HGI_post_acute_NQ13"] = np.nan
 
     clinical_table = pd.concat([clinical_table, covid_only_table, icu_only_table], axis=1)
     clinical_table["deceased"] = clinical_table.deceased.astype("boolean")
