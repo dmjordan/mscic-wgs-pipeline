@@ -136,7 +136,7 @@ def run_hail_qc(mt_path):
 @cli.command("match-samples")
 @click.argument("covariates_path", type=ClickPathlibPath())
 @click.argument("mt_path", type=ClickPathlibPath())
-@click.argument("external_x", type=ClickPathlibPath(), default=None)
+@click.argument("external_x", type=ClickPathlibPath(), default=None, required=False)
 def match_samples(covariates_path, mt_path, external_x=None):
     mt_path = mt_path.resolve()
     covariates_path = covariates_path.resolve()
@@ -331,6 +331,7 @@ def merge_chromosomes(infiles, outfile):
         mt_path = infile.resolve()
         mt = hl.read_matrix_table(str(mt_path))
         input_mts.append(mt)
+    outfile = outfile.resolve()
     merged_mt = hl.MatrixTable.union_rows(*input_mts)
     merged_mt.write(str(outfile), overwrite=True)
 

@@ -357,8 +357,8 @@ rule match_samples:
 rule imputed_match_samples:
     input:
         lambda wildcards: [COVARIATES_FILE,
-                           IMPUTED_SPLITCHR_STEM.format(chrom=wildcards.chrom) + ".mt"] + \
-            [IMPUTED_SPLITCHR_STEM.format(chrom="chrX") + ".mt"] if wildcards.chrom != "chrX" else []
+                           IMPUTED_SPLITCHR_STEM.format(chrom=wildcards.chrom) + ".mt",
+                           IMPUTED_SPLITCHR_STEM.format(chrom="chrX") + ".mt"]
     output:
         mt=directory(f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.mt")
     params:
@@ -470,9 +470,9 @@ rule pcrelate:
 # 1000 Genomes
 rule bcf_1000g:
     input:
-        "/sc/arion/projects/mscic1/resources/1000G/ALL.chr{chr,[0-9XYM]+}.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
+        "/sc/arion/projects/mscic1/resources/1000G/ALL.chr{chr}.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
     output:
-        "1000G_chr{chr}.bcf"
+        "1000G_chr{chr,[0-9XYM]+}.bcf"
     shell: """ml bcftools/1.12
     bcftools annotate --rename-chrs <(echo "{chr} chr{chr}") {input} -Ob -o {output}
     """
@@ -668,7 +668,7 @@ rule regenie_phenotypes:
     run:
         import pandas as pd
         table = pd.read_csv(input[0], index_col=0)
-        phenotypes = ["HGI_post_acute_NQ13"]
+        phenotypes = ["HGI_post_acute_NQ13", "HGI_post_acute_NQ23"]
         pheno_table = table[phenotypes].astype(float)
         pheno_table.insert(0, "IID", table.index)
         pheno_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA", float_format="{:.0f}".format)
@@ -754,7 +754,7 @@ rule regenie_step2:
         --pred {input.step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
-        --out {wildcards.prefix}.{wilcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.regenie \
+        --out {wildcards.prefix}.{wildcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.regenie \
         --strict --gz \
         --write-samples
     """

@@ -123,6 +123,7 @@ def build_design_matrix(covariates_path, design_matrix_path):
     clinical_table["post_acute_quality_of_life"] = raw_table["Post_COVID19_Quality_Of_Life"]\
         .groupby(raw_table.Subject_ID).aggregate(lambda x: x.eq("Worse").any()).astype("boolean")
     clinical_table["HGI_post_acute_NQ13"] = clinical_table["post_acute_symptoms"] | clinical_table["post_acute_quality_of_life"]
+    clinical_table["HGI_post_acute_NQ23"] = clinical_table["HGI_post_acute_NQ13"]
 
     null_post_acute = raw_table.Post_COVID19_Event_Name.groupby(raw_table.Subject_ID).aggregate(lambda x: x.isnull().all())
     clinical_table.loc[null_post_acute, "post_acute_symptoms"] = np.nan
@@ -255,7 +256,7 @@ def build_design_matrix(covariates_path, design_matrix_path):
 
         clinical_table = clinical_table.join(race_pca_table, how="left")
 
-        race_pca_table_imputed = pd.read_csv(f"TOPMed_imputed.chrall.sample_matched.{race.upper()}_only.PCAir.txt",
+        race_pca_table_imputed = pd.read_csv(f"TOPMed_imputed.chrall.dose.sample_matched.{race.upper()}_only.PCAir.txt",
                                      delim_whitespace=True,
                                      index_col="Subject_ID")
         race_pca_table_imputed.columns = [f"{race}_pc{i}_imputed" for i in range(1, len(race_pca_table_imputed.columns) + 1)]
