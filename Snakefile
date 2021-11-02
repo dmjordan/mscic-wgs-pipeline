@@ -18,6 +18,10 @@ IMPUTED_SPLITCHR_STEM = "TOPMed_imputed.{chrom}.dose"
 IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
 IMPUTED_SPLITCHR_RACE_FILTERED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".{race}_only"
 
+GENOTYPED_VCF = "/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/freeze1/PLINK/mscic_freeze1_all_merged.hg38.chrs.vcf.gz"
+GENOTYPED_STEM = "GSA_freeze1_all_merged_hg38_chrs"
+GENOTYPED_SAMPLE_MATCHED_STEM = GENOTYPED_STEM + ".sample_matched"
+GENOTYPED_RACE_FILTERED_STEM = GENOTYPED_SAMPLE_MATCHED_STEM + ".{race}_only"
 
 IMPUTED_CHRALL_STEM = IMPUTED_SPLITCHR_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '.chrall')
@@ -202,6 +206,21 @@ rule imputed_vcf2mt:
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 
+rule gsa_vcf2mt:
+    input:
+        vcf=GENOTYPED_VCF
+    output:
+        mt=directory(GENOTYPED_STEM + ".mt")
+    params:
+        pass_output=True,
+        hail_cmd="convert-vcf-to-mt",
+        hail_extra_args="--filter-multi"
+    resources:
+        cpus=16,
+        mem_mb = 11500
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+
 rule index_bgen:
     input:
         BIOME_GSA_BGEN_FILES
@@ -353,6 +372,20 @@ rule match_samples:
         cpus = 128,
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+rule gsa_match_samples:
+    input:
+        covariates = COVARIATES_FILE,
+        mt = f"{GENOTYPED_STEM}.mt"
+    output:
+        mt=directory(f"{GENOTYPED_SAMPLE_MATCHED_STEM}.mt")
+    params:
+        hail_cmd="match-samples"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
 
 rule imputed_match_samples:
     input:
@@ -708,12 +741,12 @@ rule regenie_covars:
         covar_table.insert(0, "IID", table.index)
         covar_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA")
 
-rule regenie_step1:
+rule regenie_step1_gsa:
     output:
-        "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype,[A-Za-z0-9_]+}_pred.list"
+        f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype,[A-Za-z0-9_]+}}_pred.list"
     input:
-        bgen="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.bgen",
-        sample= "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.sample",
+        bgen=f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_filtered.bgen",
+        sample=f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_filtered.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -721,7 +754,7 @@ rule regenie_step1:
         single_host=1,
         mem_mb=16000
     params:
-        out_stem = lambda wildcards: f"{wildcards.prefix}.{wildcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.{wildcards.phenotype}",
+        out_stem = lambda wildcards, output: output[0][:-10],
         race_lower= lambda wildcards: wildcards.race.lower()
     shell: r"""
     ml regenie/2.2.4
@@ -743,18 +776,19 @@ rule regenie_step1:
 
 rule regenie_step2:
     output:
-        temp("{prefix}.{chrom}.{suffix}.{race}_only.regenie_{phenotype,[A-Za-z0-9_]+}.regenie")
+        temp(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype,[A-Za-z0-9_]+}}.regenie")
     input:
-        bgen="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.bgen",
-        sample= "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.sample",
+        bgen=f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.{{phenotype}}_filtered.bgen",
+        sample=f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.{{phenotype}}_filtered.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_pred.list"
+        step1=f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_pred.list"
     resources:
         cpus=32,
         single_host=1,
         mem_mb=16000
     params:
+        out_stem=f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output",
         race_lower=lambda wildcards: wildcards.race.lower()
     shell: r"""
     ml regenie
@@ -771,17 +805,17 @@ rule regenie_step2:
         --pred {input.step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
-        --out {wildcards.prefix}.{wildcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.regenie \
+        --out {params.out_stem} \
         --strict \
         --write-samples
     """
 
 rule regenie_step2_merge_chroms:
     input:
-        expand("{prefix}.{chrom}.{suffix}.{race}_only.regenie_{phenotype}.regenie",
-        chrom=[f"chr{chrnum}" for chrnum in range(1,23)] + ['chrX'], allow_missing=True)
+        expand(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype}}.regenie",
+            chrom=[f"chr{chrnum}" for chrnum in range(1,23)] + ['chrX'], allow_missing=True)
     output:
-        "{prefix}.chrall.{suffix}.{race}_only.regenie_{phenotype}.regenie.bgz"
+        f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.output_{{phenotype}}.regenie.bgz"
     shell:
         """ml htslib
         awk 'NR == 1 || FNR > 1' {input} | bgzip -c > {output}
