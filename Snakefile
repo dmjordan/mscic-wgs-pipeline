@@ -984,7 +984,7 @@ rule gwas_plots:
 
 rule regenie_gwas_plots:
     input:
-        "{file_prefix}.regenie"
+        "{file_prefix}.regenie.bgz"
     output:
         "{file_prefix}.regenie.qq.png",
         "{file_prefix}.regenie.manhattan.png"

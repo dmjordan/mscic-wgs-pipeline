@@ -1,4 +1,5 @@
 suppressPackageStartupMessages({
+    library(tools)
     library(foreach)
     library(parallel)
     library(doParallel)
@@ -296,17 +297,19 @@ make_gwas_plots <- function(endpoint) {
 }
 
 make_gwas_plots_regenie <- function(filename) {
-    assoc <- read_delim(filename, delim=" ")
+    assoc <- read_delim(gzfile(filename, 'rb'), delim=" ") %>% filter(is.finite(LOG10P))
 
-    png(paste(filename, "qq", "png", sep="."))
+    filename_base <- file_path_sans_ext(filename)
+
+    png(paste(filename_base, "qq", "png", sep="."))
     qq(exp(-assoc$LOG10P))
     dev.off()
 
-    png(paste(filename, "manhattan", "png", sep="."))
+    png(paste(filename_base, "manhattan", "png", sep="."))
     mutate(assoc, chr_numeric=as.numeric(as.factor(CHROM)),
            pvalue=exp(-LOG10P)) %>% filter(chr_numeric < 25) %>%
         manhattan(chr="chr_numeric", bp="GENPOS", p="pvalue", snp="ID",
-                    chrlabs=c(1:22,"X","Y"), col=c("blue4","orange3"))#,ylim=c(0,10))
+                    chrlabs=c(1:22,"X"), col=c("blue4","orange3"))#,ylim=c(0,10))
     dev.off()
     1
 }
@@ -356,7 +359,7 @@ if (exists("snakemake")) {
         pcair=run_pcair(snakemake@input[["gds"]], snakemake@input[["king"]], snakemake@params[["output_stem"]]),
         pcrelate=run_pcrelate(snakemake@wildcards[["prefix"]]),
         gwas_plots=make_gwas_plots(snakemake@wildcards[["phenotype"]]),
-        regenie_gwas_plots=make_gwas_plots_regenie(snakemake@input[[0]]),
+        regenie_gwas_plots=make_gwas_plots_regenie(snakemake@input[[1]]),
         isoform_table=make_isoform_tpms_table(snakemake@input[[1]], snakemake@output[[1]])
     )
 }
