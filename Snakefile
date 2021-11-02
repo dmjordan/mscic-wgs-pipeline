@@ -743,11 +743,11 @@ rule regenie_covars:
         covar_table.insert(0, "IID", table.index)
         covar_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA")
 
-rule regenie_step1_gsa:
+rule regenie_step1_HGI_longcovid:
     output:
-        f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype,[A-Za-z0-9_]+}}_pred.list"
+        f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
     input:
-        multiext(f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_filtered", ".bed", ".bim", ".fam"),
+        multiext(GENOTYPED_RACE_FILTERED_STEM, ".bed", ".bim", ".fam"),
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -764,7 +764,7 @@ rule regenie_step1_gsa:
         --step 1 \
         --bed {params.bed_stem} \
         --phenoFile {input.pheno} \
-        --phenoCol {wildcards.phenotype} \
+        --phenoCol HGI_post_acute_NQ13,HGI_post_acute_NQ23 \
         --covarFile {input.covar} \
         --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
         --bt \
@@ -775,15 +775,15 @@ rule regenie_step1_gsa:
         --strict --gz
     """
 
-rule regenie_step2:
+rule regenie_step2_HGI_longcovid:
     output:
-        temp(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype,[A-Za-z0-9_]+}}.regenie")
+        temp(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype,HGI_post_acute_[^.]+}}.regenie")
     input:
-        bgen=f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.{{phenotype}}_filtered.bgen",
-        sample=f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.{{phenotype}}_filtered.sample",
+        bgen=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bgen",
+        sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1=f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_pred.list"
+        step1=f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
     resources:
         cpus=32,
         single_host=1,
