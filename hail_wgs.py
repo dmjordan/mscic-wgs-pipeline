@@ -178,6 +178,7 @@ def match_samples(covariates_path, mt_path, external_x=None):
         (sex_table.reported.sex != "Female")) |
         (~sex_table.is_female & (sex_table.reported.sex != "Male")))
     mt = mt.anti_join_cols(mismatched_sex)
+    mt = mt.distinct_by_col()
     mt.write(str(output_path), overwrite=True)
 
 

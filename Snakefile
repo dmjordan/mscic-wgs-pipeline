@@ -291,6 +291,8 @@ def original_vcf(wildcards):
         return str(BIOME_GSA_VCF)
     elif path_stem.startswith("625_Samples.cohort"):
         return ORIGINAL_VCF
+    elif path_stem.startswith("GSA_freeze1_all_merged"):
+        return str(GENOTYPED_VCF)
     else:
         raise ValueError(f"Don't know where to find the original VCF for prefix {wildcards.prefix}")
 
@@ -745,8 +747,7 @@ rule regenie_step1_gsa:
     output:
         f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype,[A-Za-z0-9_]+}}_pred.list"
     input:
-        bgen=f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_filtered.bgen",
-        sample=f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_filtered.sample",
+        multiext(f"{GENOTYPED_RACE_FILTERED_STEM}.{{phenotype}}_filtered", ".bed", ".bim", ".fam"),
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -755,13 +756,13 @@ rule regenie_step1_gsa:
         mem_mb=16000
     params:
         out_stem = lambda wildcards, output: output[0][:-10],
+        bed_stem = lambda wildcards, input: input[0][:-4],
         race_lower= lambda wildcards: wildcards.race.lower()
     shell: r"""
     ml regenie/2.2.4
     regenie \
         --step 1 \
-        --bgen {input.bgen} \
-        --sample {input.sample} \
+        --bed {params.bed_stem} \
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
