@@ -653,8 +653,20 @@ rule ac_filter_by_phenotype:
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-ruleorder: gwas_filter > ac_filter_by_phenotype 
-ruleorder: chrom_merge > ac_filter_by_phenotype
+
+rule ac_filter:
+    input:
+        "{prefix}.mt"
+    output:
+        directory("{prefix}.AC_filtered.mt")
+    params:
+        hail_cmd="filter-ac"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+ruleorder: chrom_merge > gwas_filter > ac_filter > ac_filter_by_phenotype
 
 rule chrom_split:
     input:
@@ -747,7 +759,7 @@ rule regenie_step1_HGI_longcovid:
     output:
         f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
     input:
-        multiext(GENOTYPED_RACE_FILTERED_STEM, ".bed", ".bim", ".fam"),
+        multiext(f"{GENOTYPED_RACE_FILTERED_STEM}.AC_filtered", ".bed", ".bim", ".fam"),
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -772,15 +784,15 @@ rule regenie_step1_HGI_longcovid:
         --loocv \
         --threads {resources.cpus} \
         --out {params.out_stem} \
-        --strict --gz
+        --gz
     """
 
 rule regenie_step2_HGI_longcovid:
     output:
         temp(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype,HGI_post_acute_[^.]+}}.regenie")
     input:
-        bgen=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bgen",
-        sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.sample",
+        bgen=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.AC_filtered.bgen",
+        sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.AC_filtered.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
         step1=f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
@@ -807,7 +819,6 @@ rule regenie_step2_HGI_longcovid:
         --bsize 1000 \
         --threads {resources.cpus} \
         --out {params.out_stem} \
-        --strict \
         --write-samples
     """
 
