@@ -59,6 +59,12 @@ TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe",
         "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
+TRAITS_OF_INTEREST_BINARY = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod",
+                             "severity_ever_increased", "severity_ever_decreased", "who_ever_increased",
+                             "who_ever_decreased", "recovered"]
+
+TRAITS_OF_INTEREST_QUANTITATIVE = ["max_who", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
+
 BIOME_TRAITS = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod",
                 "max_who", "severity_ever_increased", "severity_ever_decreased",
                 "who_ever_increased", "who_ever_decreased", "covid_encounter_days_log"]
@@ -710,6 +716,7 @@ rule design_matrix:
         flowcells="flowcells.csv",
         gsa_batches="gsa_batches.csv",
         pcair=f"{SAMPLE_MATCHED_STEM}.PCAir.txt",
+        pcair_imputed=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.PCAir.txt",
         bvl="MSCIC_blood_viral_load_predictions.csv"
     output:
         DESIGN_MATRIX
@@ -732,7 +739,7 @@ rule regenie_phenotypes:
     run:
         import pandas as pd
         table = pd.read_csv(input[0], index_col=0)
-        phenotypes = ["HGI_post_acute_NQ13", "HGI_post_acute_NQ23"]
+        phenotypes = ["HGI_post_acute_NQ13", "HGI_post_acute_NQ23"] + TRAITS_OF_INTEREST
         pheno_table = table[phenotypes].astype(float)
         pheno_table.insert(0, "IID", table.index)
         pheno_table.to_csv(output[0], sep=" ", index_label="FID", na_rep="NA", float_format="{:.0f}".format)
@@ -822,12 +829,80 @@ rule regenie_step2_HGI_longcovid:
         --write-samples
     """
 
+rule regenie_step1_multiancestry_binary_traits:
+    output:
+        f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
+    input:
+        multiext(f"{GENOTYPED_SAMPLE_MATCHED_STEM}.AC_filtered", ".bed", ".bim", ".fam"),
+        pheno="regenie_phenotypes.txt",
+        covar="regenie_covars.txt"
+    resources:
+        cpus=32,
+        single_host=1,
+        mem_mb=16000
+    params:
+        out_stem = lambda wildcards, output: output[0][:-10],
+        bed_stem = lambda wildcards, input: input[0][:-4],
+        traits_formatted = ",".join(TRAITS_OF_INTEREST_BINARY)
+    shell: r"""
+    ml regenie/2.2.4
+    regenie \
+        --step 1 \
+        --bed {params.bed_stem} \
+        --phenoFile {input.pheno} \
+        --phenoCol  {params.traits_formatted} \
+        --covarFile {input.covar} \
+        --covarColList age,age_squared,age_sex,recruitment_date,pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
+        --bt \
+        --bsize 1000 \
+        --loocv \
+        --threads {resources.cpus} \
+        --out {params.out_stem} \
+        --gz
+    """
+
+rule regenie_step2_multiancestry_binary_traits:
+    output:
+        temp(f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_BT_{{phenotype}}.regenie")
+    input:
+        bgen=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.AC_filtered.bgen",
+        sample=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.AC_filtered.sample",
+        pheno="regenie_phenotypes.txt",
+        covar="regenie_covars.txt",
+        step1=f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
+    resources:
+        cpus=32,
+        single_host=1,
+        mem_mb=16000
+    params:
+        out_stem=f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_BT",
+        traits_formatted= ",".join(TRAITS_OF_INTEREST_BINARY)
+    shell: r"""
+    ml regenie
+    regenie \
+        --step 2 \
+        --bgen {input.bgen} \
+        --sample {input.sample} \
+        --phenoFile {input.pheno} \
+        --phenoCol {wildcards.phenotype} \
+        --covarFile {input.covar} \
+        --covarColList age,age_squared,age_sex,recruitment_date,pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
+        --chr {wildcards.chrom} \
+        --bt --spa \
+        --pred {input.step1} \
+        --bsize 1000 \
+        --threads {resources.cpus} \
+        --out {params.out_stem} \
+        --write-samples
+    """
+
+
 rule regenie_step2_merge_chroms:
     input:
-        expand(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype}}.regenie",
+        expand("{prefix}.{chrom}.{suffix}.output_{phenotype}.regenie",
             chrom=[f"chr{chrnum}" for chrnum in range(1,23)] + ['chrX'], allow_missing=True)
     output:
-        f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.output_{{phenotype}}.regenie.bgz"
+        "{prefix}.chrall.{suffix}.output_{phenotype}.regenie.bgz"
     shell:
         """ml htslib
         awk 'NR == 1 || FNR > 1' {input} | bgzip -c > {output}
