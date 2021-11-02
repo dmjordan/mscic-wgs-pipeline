@@ -604,6 +604,23 @@ rule pext_lof_filter:
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
+rule ac_filter_by_phenotype:
+    input:
+        "{prefix}.mt",
+        DESIGN_MATRIX
+    output:
+        directory("{prefix}.{phenotype,[A-Za-z0-9_]+}_filtered.mt")
+    params:
+        hail_cmd="filter-ac-by-phenotype",
+        hail_extra_args=lambda wildcards: wildcards.phenotype
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+ruleorder: gwas_filter > ac_filter_by_phenotype 
+ruleorder: chrom_merge > ac_filter_by_phenotype
+
 rule chrom_split:
     input:
         mt="{prefix}.mt"
@@ -679,8 +696,10 @@ rule regenie_covars:
     run:
         import pandas as pd
         table = pd.read_csv(input[0], index_col=0)
-        covars = ["age", "sex", "age_sex", "age_squared", "recruitment_date", "gsa_batch"]
+        table = pd.get_dummies(table, columns=["sex", "gsa_batch"])
+        covars = ["age", "sex_M", "age_sex", "age_squared", "recruitment_date"]
         covars += list(table.columns[table.columns.str.startswith("flowcell_")])
+        covars += list(table.columns[table.columns.str.startswith("gsa_batch_")])
         covars += [f"pc{i}" for i in range(1,11)]
         for race in "eur", "afr", "amr", "sas", "eas", "white", "black", "hispanic", "asian":
             covars += [f"{race}_pc{i}" for i in range(1,11)]
@@ -691,10 +710,10 @@ rule regenie_covars:
 
 rule regenie_step1:
     output:
-        "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype,[A-Za-z0-9_]+}.regenie_step1_pred.list"
+        "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype,[A-Za-z0-9_]+}_pred.list"
     input:
-        bgen="{prefix}.{chrom}.{suffix}.{race}_only.bgen",
-        sample= "{prefix}.{chrom}.{suffix}.{race}_only.sample",
+        bgen="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.bgen",
+        sample= "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -713,8 +732,7 @@ rule regenie_step1:
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed \
-        --catCovarList sex,gsa_batch \
+        --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
         --bt \
         --bsize 1000 \
         --loocv \
@@ -725,13 +743,13 @@ rule regenie_step1:
 
 rule regenie_step2:
     output:
-        "{prefix}.{chrom}.{suffix}.{race}_only.regenie_{phenotype,[A-Za-z0-9_]+}.regenie.gz"
+        temp("{prefix}.{chrom}.{suffix}.{race}_only.regenie_{phenotype,[A-Za-z0-9_]+}.regenie")
     input:
-        bgen="{prefix}.{chrom}.{suffix}.{race}_only.bgen",
-        sample= "{prefix}.{chrom}.{suffix}.{race}_only.sample",
+        bgen="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.bgen",
+        sample= "{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_filtered.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}.regenie_step1_pred.list"
+        step1="{prefix}.{chrom}.{suffix}.{race}_only.{phenotype}_pred.list"
     resources:
         cpus=32,
         single_host=1,
@@ -747,17 +765,27 @@ rule regenie_step2:
         --phenoFile {input.pheno} \
         --phenoCol {wildcards.phenotype} \
         --covarFile {input.covar} \
-        --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed \
-        --catCovarList sex,gsa_batch \
+        --covarColList age,age_squared,age_sex,recruitment_date,{params.race_lower}_pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
         --chr {wildcards.chrom} \
         --bt --spa \
         --pred {input.step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
         --out {wildcards.prefix}.{wildcards.chrom}.{wildcards.suffix}.{wildcards.race}_only.regenie \
-        --strict --gz \
+        --strict \
         --write-samples
     """
+
+rule regenie_step2_merge_chroms:
+    input:
+        expand("{prefix}.{chrom}.{suffix}.{race}_only.regenie_{phenotype}.regenie",
+        chrom=[f"chr{chrnum}" for chrnum in range(1,23)] + ['chrX'], allow_missing=True)
+    output:
+        "{prefix}.chrall.{suffix}.{race}_only.regenie_{phenotype}.regenie.bgz"
+    shell:
+        """ml htslib
+        awk 'NR == 1 || FNR > 1' {input} | bgzip -c > {output}
+        """
 
 rule null_model:
     input:

@@ -267,6 +267,23 @@ def subset_mt_samples(mt_path, indiv_list, out_path):
     mt.write(str(out_path.resolve()), overwrite=True)
 
 
+@cli.command("filter-ac-by-phenotype")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("phenotype_table_path", type=ClickPathlibPath())
+@click.argument("phenotype")
+def filter_ac_by_phenotype(mt_path, phenotype_table_path, phenotype):
+    mt_path = mt_path.resolve()
+    phenotype_table_path = phenotype_table_path.resolve()
+    mt = hl.read_matrix_table(str(mt_path))
+    pandas_table = pd.read_csv(phenotype_table_path, index_col=0)
+    pandas_table.index.name = "Subject_ID"
+    pandas_table = pandas_table[[phenotype]].dropna().reset_index()
+    mt = mt.semi_join_cols(hl.Table.from_pandas(pandas_table, key="Subject_ID"))
+    mt = mt.annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
+    mt = mt.filter_rows(mt.gt_stats.AC.any(lambda ac: (ac > 5) & (ac < mt.gt_stats.AN - 5)))
+    mt.write(str(mt_path.with_suffix(f".{phenotype}_filtered.mt")), overwrite=True)
+
+
 @cli.command("run-vep")
 @click.argument("mt_path", type=ClickPathlibPath())
 @click.argument("extra_args", nargs=-1)
