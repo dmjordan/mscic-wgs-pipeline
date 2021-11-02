@@ -982,6 +982,19 @@ rule gwas_plots:
         genesis_cmd="gwas_plots"
     script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
 
+rule regenie_gwas_plots:
+    input:
+        "{file_prefix}.regenie"
+    output:
+        "{file_prefix}.regenie.qq.png",
+        "{file_prefix}.regenie.manhattan.png"
+    resources:
+        mem_mb="16000"
+    params:
+        genesis_cmd="regenie_gwas_plots"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+
+
 rule run_smmat:
     input:
         f"{SAMPLE_MATCHED_STEM}.{{subset}}_filtered.seq.gds",
