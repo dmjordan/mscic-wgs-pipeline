@@ -253,8 +253,8 @@ def build_design_matrix(covariates_path, design_matrix_path):
     pca_table_imputed.columns = [f"pc{i}_imputed" for i in range(1, len(pca_table_imputed.columns) + 1)]
     pca_table_imputed = pca_table_imputed.iloc[:, :10]
 
-    clinical_table = clinical_table.join(flowcells, how="left").join(pca_table_imputed,
-                                                                     how="left")  # .join(race, how="inner")
+    clinical_table = clinical_table.join(pca_table_imputed,
+                                         how="left")
 
     for race in "white", "black", "asian", "hispanic", 'eur', 'afr', 'amr', 'eas', 'sas':
         race_pca_table = pd.read_csv(f"625_Samples.cohort.QC_filtered.sample_matched.{race.upper()}_only.PCAir.txt", delim_whitespace=True,

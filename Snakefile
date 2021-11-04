@@ -264,8 +264,9 @@ rule mt2plink:
     params:
         hail_cmd="convert-mt-to-plink"
     resources:
-        cpus=128,
-        mem_mb=11500
+        cpus=32,
+        mem_mb=12000,
+        single_host=1
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule plink2snpgds:
@@ -666,7 +667,8 @@ rule ac_filter:
     output:
         directory("{prefix}.AC_filtered.mt")
     params:
-        hail_cmd="filter-ac"
+        hail_cmd="filter-ac",
+        hail_extra_args="10"
     resources:
         cpus = 128,
         mem_mb = 12000
@@ -755,6 +757,7 @@ rule regenie_covars:
         covars += list(table.columns[table.columns.str.startswith("flowcell_")])
         covars += list(table.columns[table.columns.str.startswith("gsa_batch_")])
         covars += [f"pc{i}" for i in range(1,11)]
+        covars += [f"pc{i}_imputed" for i in range(1,11)]
         for race in "eur", "afr", "amr", "sas", "eas", "white", "black", "hispanic", "asian":
             covars += [f"{race}_pc{i}" for i in range(1,11)]
             covars += [f"{race}_pc{i}_imputed" for i in range(1,11)]
@@ -865,8 +868,8 @@ rule regenie_step2_multiancestry_binary_traits:
     output:
         temp(f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_BT_{{phenotype}}.regenie")
     input:
-        bgen=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.AC_filtered.bgen",
-        sample=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.AC_filtered.sample",
+        bgen=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.bgen",
+        sample=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
         step1=f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
