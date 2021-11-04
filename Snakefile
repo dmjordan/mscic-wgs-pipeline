@@ -806,8 +806,8 @@ rule regenie_step2_HGI_longcovid:
     output:
         temp(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.output_{{phenotype,HGI_post_acute_[^.]+}}.regenie")
     input:
-        bgen=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.AC_filtered.bgen",
-        sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.AC_filtered.sample",
+        bgen=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bgen",
+        sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
         step1=f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
