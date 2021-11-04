@@ -150,7 +150,7 @@ rule metal_traits_of_interest:
 
 rule regenie_imputed_traits_of_interest:
     input:
-        expand(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.output_{{phenotype}}.regenie.{{ext}}",
+        expand(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.output_{{phenotype}}.regenie{{ext}}",
         phenotype=[f"BT_{phenotype}" for phenotype in TRAITS_OF_INTEREST_BINARY] +
                   [f"QT_{phenotype}" for phenotype in TRAITS_OF_INTEREST_QUANTITATIVE],
         ext=[".bgz", ".qq.png", ".manhattan.png"])
@@ -915,7 +915,7 @@ rule regenie_step2_multiancestry_quantitative_traits:
         single_host=1,
         mem_mb=16000
     params:
-        out_stem=f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_BT",
+        out_stem=f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_QT",
         traits_formatted= ",".join(TRAITS_OF_INTEREST_BINARY)
     shell: r"""
     ml regenie
@@ -929,6 +929,42 @@ rule regenie_step2_multiancestry_quantitative_traits:
         --covarColList age,age_squared,age_sex,recruitment_date,pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
         --chr {wildcards.chrom} \
         --spa \
+        --pred {input.step1} \
+        --bsize 1000 \
+        --threads {resources.cpus} \
+        --out {params.out_stem} \
+        --write-samples
+    """
+
+
+rule regenie_step2_multiancestry_binary_traits:
+    output:
+        temp(f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_BT_{{phenotype}}.regenie")
+    input:
+        bgen=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.bgen",
+        sample=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.sample",
+        pheno="regenie_phenotypes.txt",
+        covar="regenie_covars.txt",
+        step1=f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
+    resources:
+        cpus=32,
+        single_host=1,
+        mem_mb=16000
+    params:
+        out_stem=f"{IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM}.output_BT",
+        traits_formatted= ",".join(TRAITS_OF_INTEREST_BINARY)
+    shell: r"""
+    ml regenie
+    regenie \
+        --step 2 \
+        --bgen {input.bgen} \
+        --sample {input.sample} \
+        --phenoFile {input.pheno} \
+        --phenoCol {wildcards.phenotype} \
+        --covarFile {input.covar} \
+        --covarColList age,age_squared,age_sex,recruitment_date,pc{{1:10}}_imputed,sex_M,gsa_batch_TD01711,gsa_batch_TD01789,gsa_batch_TD01869,gsa_batch_TD01901 \
+        --chr {wildcards.chrom} \
+        --bt --spa \
         --pred {input.step1} \
         --bsize 1000 \
         --threads {resources.cpus} \
