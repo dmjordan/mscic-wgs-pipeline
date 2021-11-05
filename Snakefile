@@ -16,6 +16,7 @@ LD_STEM = GWAS_STEM + ".LD_pruned"
 IMPUTED_VCF_PATTEN = Path("/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/imputation/{chrom}.dose.vcf.gz")
 IMPUTED_SPLITCHR_STEM = "TOPMed_imputed.{chrom}.dose"
 IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_STEM + ".sample_matched"
+IMPUTED_SPLITCHR_GWAS_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".GWAS_filtered"
 IMPUTED_SPLITCHR_RACE_FILTERED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM + ".{race}_only"
 
 GENOTYPED_VCF = "/sc/arion/projects/mscic2/covid19_mscic2/GWAS/data/data/freeze1/PLINK/mscic_freeze1_all_merged.hg38.chrs.vcf.gz"
@@ -25,6 +26,7 @@ GENOTYPED_RACE_FILTERED_STEM = GENOTYPED_SAMPLE_MATCHED_STEM + ".{race}_only"
 
 IMPUTED_CHRALL_STEM = IMPUTED_SPLITCHR_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_SAMPLE_MATCHED_STEM = IMPUTED_SPLITCHR_SAMPLE_MATCHED_STEM.replace('.{chrom}', '.chrall')
+IMPUTED_CHRALL_GWAS_STEM = IMPUTED_SPLITCHR_GWAS_STEM.replace('.{chrom}', '.chrall')
 IMPUTED_CHRALL_RACE_FILTERED_STEM = IMPUTED_SPLITCHR_RACE_FILTERED_STEM.replace('.{chrom}', '.chrall')
 
 
@@ -94,6 +96,12 @@ rule gwas_traits_of_interest:
     input:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
+
+rule imputed_gwas_traits_of_interest:
+    input:
+        expand("IMPUTED_{phenotype}.GENESIS.{suffix}",
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
+
 
 rule gwas_traits_of_interest_force_pcs:
     input:
@@ -1102,6 +1110,23 @@ rule run_gwas:
         """
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}{wildcards.phenotype_suffix}
+        """
+
+rule run_imputed_gwas:
+    input:
+        gds=f"{IMPUTED_CHRALL_GWAS_STEM}.shards.seq.gds",
+        null_model=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
+    output:
+        txt="IMPUTED_{phenotype_untagged}.GENESIS.assoc.txt"
+    resources:
+        cpus=128,
+        mem_mb=11500
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} IMPUTED_{wildcards.phenotype_untagged}
         """
 
 rule run_biome_gwas:
