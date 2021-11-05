@@ -155,6 +155,13 @@ rule regenie_imputed_traits_of_interest:
                   [f"QT_{phenotype}" for phenotype in TRAITS_OF_INTEREST_QUANTITATIVE],
         ext=[".bgz", ".qq.png", ".manhattan.png"])
 
+rule regenie_imputed_hgi_longcovid:
+    input:
+        expand(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.output_{{phenotype}}.regenie{{ext}}",
+        phenotype=["HGI_post_acute_NQ13", "HGI_post_acute_NQ23"],
+        ext=[".bgz", ".qq.png", ".manhattan.png"])
+
+
 # summary / report rules
 
 rule coloc2_report_traits_of_interest:
