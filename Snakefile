@@ -157,9 +157,10 @@ rule regenie_imputed_traits_of_interest:
 
 rule regenie_imputed_hgi_longcovid:
     input:
-        expand(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.output_{{phenotype}}.regenie{{ext}}",
+        expand(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.output_{{phenotype}}.regenie{{ext}}",
         phenotype=["HGI_post_acute_NQ13", "HGI_post_acute_NQ23"],
-        ext=[".bgz", ".qq.png", ".manhattan.png"])
+        ext=[".bgz", ".qq.png", ".manhattan.png"],
+        race=["EUR", "AFR"])
 
 
 # summary / report rules
