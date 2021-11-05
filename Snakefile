@@ -321,6 +321,8 @@ def original_vcf(wildcards):
         return ORIGINAL_VCF
     elif path_stem.startswith("GSA_freeze1_all_merged"):
         return str(GENOTYPED_VCF)
+    elif path_stem.startswith("TOPMed_imputed"):
+        return str(IMPUTED_VCF_PATTEN).format("chr21")
     else:
         raise ValueError(f"Don't know where to find the original VCF for prefix {wildcards.prefix}")
 
