@@ -322,7 +322,7 @@ def original_vcf(wildcards):
     elif path_stem.startswith("GSA_freeze1_all_merged"):
         return str(GENOTYPED_VCF)
     elif path_stem.startswith("TOPMed_imputed"):
-        return str(IMPUTED_VCF_PATTEN).format("chr21")
+        return str(IMPUTED_VCF_PATTEN).format(chrom="chr21")
     else:
         raise ValueError(f"Don't know where to find the original VCF for prefix {wildcards.prefix}")
 
@@ -725,7 +725,7 @@ rule chrom_merge:
         pass_output=True
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
 
-ruleorder: chrom_merge > biome_match_samples
+ruleorder: chrom_merge > imputed_match_samples > biome_match_samples
 ruleorder: chrom_merge > split_races
 ruleorder: chrom_merge > gwas_filter
 ruleorder: chrom_merge > prune_ld
@@ -1019,6 +1019,22 @@ rule null_model:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
+rule imputed_null_model:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS"
+    output:
+        rds=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.IMPUTED_{{phenotype_untagged}}.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=20000
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive_imputed.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        """
 rule biome_null_model:
     input:
         "{prefix}.biome_dmatrix.csv",
@@ -1117,7 +1133,7 @@ rule run_gwas:
 rule run_imputed_gwas:
     input:
         gds=f"{IMPUTED_CHRALL_GWAS_STEM}.shards.seq.gds",
-        null_model=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.BIOME_{{phenotype_untagged}}.null.RDS"
+        null_model=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.IMPUTED_{{phenotype_untagged}}.null.RDS"
     output:
         txt="IMPUTED_{phenotype_untagged}.GENESIS.assoc.txt"
     resources:

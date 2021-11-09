@@ -19,7 +19,8 @@ cat("subset:", if (subset_tag == "") "<none>" else subset_tag, fill=TRUE)
 cat("excluded samples:", if (length(exclude_samples) > 0) exclude_samples else "<none>", fill=TRUE)
 
 read_csv("/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv") %>%
-  rename(scanID=Subject_ID) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
+  rename(scanID=Subject_ID) %>% mutate(race_factor = factor(race_factor),
+                                       gsa_batch_factor = factor(gsa_batch)) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
 sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
 
@@ -31,10 +32,10 @@ clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
               "recruitment_date",
               "is_hispanic",
               "race_factor",
-              "multi_batch",
-              "any_comorbidity")) -> non_pc_covars
+              "any_comorbidity",
+              "gsa_batch_factor")) -> non_pc_covars
 
-map(1:10, ~paste0("pc", 1:.x)) %>% prepend(list(character())) -> pcs
+map(1:10, ~paste0("pc", 1:.x, "_imputed")) %>% prepend(list(character())) -> pcs
 map(1:length(non_pc_covars), ~ combn(non_pc_covars, .x, simplify=FALSE)) %>%
   flatten %>% cross2(pcs) %>% map(unlist) -> all_covar_combinations
 
@@ -77,7 +78,7 @@ if (length(succeeded_models) == 0) {
 map_dbl(succeeded_models, "AIC") %>% compact %>% which.min %>% pluck(succeeded_models, .) -> model
 cat("Best combination among succeeded models:", model$covars, "\n")
 
-saveRDS(model, paste(file_prefix, paste0(endpoint, subset_tag), "null", "RDS", sep="."))
+saveRDS(model, paste(file_prefix, paste0("IMPUTED_", endpoint, subset_tag), "null", "RDS", sep="."))
 
 closeCluster(cl)
 mpi.quit()
