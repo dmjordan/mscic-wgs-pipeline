@@ -114,6 +114,13 @@ def run_hail_qc(mt_path):
     p = hl.plot.scatter(mt.sample_qc.dp_stats.mean, mt.sample_qc.call_rate, xlabel='Mean DP', ylabel='Call Rate')
     export_png(p, str(mt_path.with_suffix(".sample_qc.dp_v_callrate_scatter.png")))
 
+    p = hl.plot.histogram(mt.sample_qc.gq_stats.min, range=(10, 70), legend='Min Sample GQ')
+    export_png(p, str(mt_path.with_suffix(".sample_qc.min_gq_hist.png")))
+    p = hl.plot.histogram(mt.sample_qc.dp_stats.min, range=(20, 50), legend='Min Sample DP')
+    export_png(p, str(mt_path.with_suffix(".sample_qc.min_dp_hist.png")))
+    p = hl.plot.scatter(mt.sample_qc.dp_stats.min, mt.sample_qc.call_rate, xlabel='Min DP', ylabel='Call Rate')
+    export_png(p, str(mt_path.with_suffix(".sample_qc.min_dp_v_callrate_scatter.png")))
+
     mt_filtered = mt.filter_cols((mt.sample_qc.dp_stats.mean > 24) & (mt.sample_qc.call_rate > 0.85) & (mt.sample_qc.gq_stats.mean > 40))
     mt_filtered = mt_filtered.annotate_rows(gt_stats=hl.agg.call_stats(mt_filtered.GT, mt_filtered.alleles))
     mt_filtered = mt_filtered.filter_rows(mt_filtered.gt_stats.AC.any(lambda ac: (ac > 0) & (ac < mt_filtered.gt_stats.AN)))
@@ -128,6 +135,15 @@ def run_hail_qc(mt_path):
     export_png(p, str(mt_path.with_suffix(".variant_qc.dp_hist.png")))
     p = hl.plot.scatter(mt_filtered.variant_qc.dp_stats.mean, mt_filtered.variant_qc.call_rate, xlabel='Mean DP', ylabel='Call Rate')
     export_png(p, str(mt_path.with_suffix(".variant_qc.dp_v_callrate_scatter.png")))
+
+    p = hl.plot.histogram(mt_filtered.variant_qc.gq_stats.min, range=(10, 70), legend='Min Variant GQ')
+    export_png(p, str(mt_path.with_suffix(".variant_qc.min_gq_hist.png")))
+    p = hl.plot.histogram(mt_filtered.variant_qc.dp_stats.min, range=(20, 50), legend='Min Variant DP')
+    export_png(p, str(mt_path.with_suffix(".variant_qc.min_dp_hist.png")))
+    p = hl.plot.scatter(mt_filtered.variant_qc.dp_stats.min, mt_filtered.variant_qc.call_rate, xlabel='Min DP',
+                        ylabel='Call Rate')
+    export_png(p, str(mt_path.with_suffix(".variant_qc.min_dp_v_callrate_scatter.png")))
+
     mt_filtered = mt_filtered.filter_rows((mt_filtered.variant_qc.dp_stats.mean > 25) & (mt_filtered.variant_qc.call_rate > 0.9) & (mt_filtered.variant_qc.gq_stats.mean > 40))
     print('After applying sample and variant QC, {0}/{1} variants remain.'.format(mt_filtered.count_rows(), mt.count_rows()), file=sys.stderr)
     mt_filtered.write(str(mt_path.with_suffix(".QC_filtered.mt")), overwrite=True)
