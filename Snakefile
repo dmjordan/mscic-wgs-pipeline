@@ -1559,3 +1559,17 @@ rule gofigure:
             --outfile_appendix GOFigure_0.5 \
             --similarity_cutoff 0.5
         """
+
+rule imputation_concordance:
+    input:
+        GWAS_STEM + ".mt",
+        IMPUTED_CHRALL_GWAS_STEM + ".mt"
+    output:
+        multiext("WGS_imputed_concordance.GWAS_filtered", ".typed.by_sample.tsv", ".typed.by_variant.tsv")
+    params:
+        hail_cmd="imputation-concordance",
+        hail_extra_args=lambda wildcards, output: ".".join(output[0].split(".")[:-3])
+    resources:
+        cpus = 128,
+        mem_mb = 11500
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")

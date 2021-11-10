@@ -437,23 +437,37 @@ def filter_hi_pext_lof(mt_path):
     mt.write(str(outpath), overwrite=True)
 
 
-@cli.command("imputation-correlation")
+@cli.command("imputation-concordance")
 @click.argument("wgs_mt_path", type=ClickPathlibPath())
 @click.argument("imputed_mt_path", type=ClickPathlibPath())
-@click.argument("output_path", type=ClickPathlibPath())
-def imputation_correlation(wgs_mt_path, imputed_mt_path, output_path):
+@click.argument("output_prefix", type=ClickPathlibPath())
+def imputation_concordance(wgs_mt_path, imputed_mt_path, output_prefix):
     wgs_mt_path = wgs_mt_path.resolve()
     imputed_mt_path = imputed_mt_path.resolve()
-    output_path = output_path.resolve()
+    output_prefix = output_prefix.resolve()
 
     mt = hl.read_matrix_table(str(wgs_mt_path))
     imputed_mt = hl.read_matrix_table(str(imputed_mt_path))
-    mt = mt.annotate_entries(imputed=imputed_mt[mt.row_key, mt.col_key])
 
-    corr_table = mt.group_rows_by(mt.locus).aggregate_entries(dosage_corr=hl.agg.corr(hl.pl_dosage(mt.PL),
-                                                                                      mt.imputed.DS),
-                                                                gt_corr=hl.agg.corr(mt.GT.n_alt_alleles(),
-                                                                                    mt.imputed.GT.n_alt_alleles())).result()
+    global_condordance, sample_concordance, variant_concordance = hl.concordance(mt, imputed_mt.filter(
+        imputed_mt.info.TYPED | imputed_mt.info.TYPED_ONLY))
+
+    sample_concordance = sample_concordance.select(
+        concordant=hl.sum([sample_concordance.concordance[i][i] for i in range(2, 5)]),
+        discordant=sample_concordance.n_discordant)
+    sample_concordance = sample_concordance.annotate(
+        total=sample_concordance.concordant + sample_concordance.discordant,
+        frac_concordant=(sample_concordance.concordant + sample_concordance.discordant) / sample_concordance.total)
+    sample_concordance.export(str(output_prefix) + ".typed.by_sample.tsv")
+
+    variant_concordance = variant_concordance.select(
+        concordant=hl.sum([variant_concordance.concordance[i][i] for i in range(2, 5)]),
+        discordant=variant_concordance.n_discordant)
+    variant_concordance = variant_concordance.annotate(
+        total=variant_concordance.concordant + variant_concordance.discordant,
+        frac_concordant=(variant_concordance.concordant + variant_concordance.discordant) / variant_concordance.total)
+    variant_concordance.export(str(output_prefix) + ".typed.by_variant.tsv")
+
 
 
 if __name__ == "__main__":
