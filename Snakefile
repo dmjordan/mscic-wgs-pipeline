@@ -697,7 +697,22 @@ rule ac_filter:
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-ruleorder: chrom_merge > gwas_filter > ac_filter > ac_filter_by_phenotype
+
+rule regenie_step1_filter:
+    input:
+        "{prefix}.mt"
+    output:
+        directory("{prefix}.regenie_step1_filtered.mt")
+    params:
+        hail_cmd="filter-ac",
+        hail_extra_args="1"
+    resources:
+        cpus = 128,
+        mem_mb = 12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+
+ruleorder: chrom_merge > gwas_filter > regenie_step1_filter > ac_filter > ac_filter_by_phenotype
 
 rule chrom_split:
     input:
@@ -857,9 +872,9 @@ rule regenie_step2_HGI_longcovid:
 
 rule regenie_step1_multiancestry_binary_traits:
     output:
-        f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
+        f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
     input:
-        multiext(f"{GENOTYPED_SAMPLE_MATCHED_STEM}.AC_filtered", ".bed", ".bim", ".fam"),
+        multiext(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.regenie_step1_filtered", ".bed", ".bim", ".fam"),
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -889,9 +904,9 @@ rule regenie_step1_multiancestry_binary_traits:
 
 rule regenie_step1_multiancestry_quantitative_traits:
     output:
-        f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_quant_pred.list"
+        f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.multiancestry_quant_pred.list"
     input:
-        multiext(f"{GENOTYPED_SAMPLE_MATCHED_STEM}.AC_filtered", ".bed", ".bim", ".fam"),
+        multiext(f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.regenie_step1_filtered", ".bed", ".bim", ".fam"),
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -927,7 +942,7 @@ rule regenie_step2_multiancestry_quantitative_traits:
         sample=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1=f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_quant_pred.list"
+        step1=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.multiancestry_quant_pred.list"
     resources:
         cpus=32,
         single_host=1,
@@ -963,7 +978,7 @@ rule regenie_step2_multiancestry_binary_traits:
         sample=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1=f"{GENOTYPED_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
+        step1=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.multiancestry_binary_pred.list"
     resources:
         cpus=32,
         single_host=1,
