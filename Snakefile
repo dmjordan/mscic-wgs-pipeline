@@ -805,9 +805,9 @@ rule regenie_covars:
 
 rule regenie_step1_HGI_longcovid:
     output:
-        f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
+        f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
     input:
-        multiext(f"{GENOTYPED_RACE_FILTERED_STEM}.AC_filtered", ".bed", ".bim", ".fam"),
+        multiext(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.regenie_step1_filtered", ".bed", ".bim", ".fam"),
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt"
     resources:
@@ -843,7 +843,7 @@ rule regenie_step2_HGI_longcovid:
         sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1=f"{GENOTYPED_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
+        step1=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.regenie_step1_filtered.list"
     resources:
         cpus=32,
         single_host=1,
