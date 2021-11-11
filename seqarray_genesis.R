@@ -302,12 +302,12 @@ make_gwas_plots_regenie <- function(filename) {
     filename_base <- file_path_sans_ext(filename)
 
     png(paste(filename_base, "qq", "png", sep="."))
-    qq(exp(-assoc$LOG10P))
+    qq(10^(-assoc$LOG10P))
     dev.off()
 
     png(paste(filename_base, "manhattan", "png", sep="."))
     mutate(assoc, chr_numeric=as.numeric(as.factor(CHROM)),
-           pvalue=exp(-LOG10P)) %>% filter(chr_numeric < 25) %>%
+           pvalue=10^(-LOG10P)) %>% filter(chr_numeric < 25) %>%
         manhattan(chr="chr_numeric", bp="GENPOS", p="pvalue", snp="ID",
                     chrlabs=c(1:22,"X"), col=c("blue4","orange3"))#,ylim=c(0,10))
     dev.off()

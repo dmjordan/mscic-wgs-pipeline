@@ -163,7 +163,7 @@ def match_samples(covariates_path, mt_path, external_x=None):
     # reindex to subjects rather than samples
     # which requires removing duplicated subjects
     mt = mt.filter_cols(~mt.s.endswith("a"))
-    mt = mt.annotate_cols(Subject_ID=mt.s.split("_")[-1].split("T")[0])
+    mt = mt.annotate_cols(Subject_ID=mt.s.split("_")[0].split("T")[0])
     mt = mt.rename({"Subject_ID": "s", "s": "sample_id"})
     mt = mt.key_cols_by("s")
 
@@ -310,6 +310,18 @@ def filter_ac(mt_path, ac_value):
     mt = mt.annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
     mt = mt.filter_rows(mt.gt_stats.AC.any(lambda ac: (ac > ac_value) & (ac < mt.gt_stats.AN - ac_value)))
     mt.write(str(mt_path.with_suffix(f".AC_filtered.mt")), overwrite=True)
+
+
+@cli.command("filter-regenie-step1")
+@click.argument("mt_path", type=ClickPathlibPath())
+@click.argument("ac_value", type=int)
+def filter_ac(mt_path, ac_value):
+    mt_path = mt_path.resolve()
+    mt = hl.read_matrix_table(str(mt_path))
+    mt = mt.filter_rows(mt.TYPED | mt.TYPED_ONLY)
+    mt = mt.annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
+    mt = mt.filter_rows(mt.gt_stats.AC.any(lambda ac: (ac > ac_value) & (ac < mt.gt_stats.AN - ac_value)))
+    mt.write(str(mt_path.with_suffix(f".regenie_step1_filtered.mt")), overwrite=True)
 
 
 
