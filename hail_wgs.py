@@ -449,23 +449,25 @@ def imputation_concordance(wgs_mt_path, imputed_mt_path, output_prefix):
     mt = hl.read_matrix_table(str(wgs_mt_path))
     imputed_mt = hl.read_matrix_table(str(imputed_mt_path))
 
-    global_condordance, sample_concordance, variant_concordance = hl.concordance(mt, imputed_mt.filter(
+    global_condordance, sample_concordance, variant_concordance = hl.concordance(mt, imputed_mt.filter_rows(
         imputed_mt.info.TYPED | imputed_mt.info.TYPED_ONLY))
 
     sample_concordance = sample_concordance.select(
         concordant=hl.sum([sample_concordance.concordance[i][i] for i in range(2, 5)]),
         discordant=sample_concordance.n_discordant)
     sample_concordance = sample_concordance.annotate(
-        total=sample_concordance.concordant + sample_concordance.discordant,
-        frac_concordant=(sample_concordance.concordant + sample_concordance.discordant) / sample_concordance.total)
+        total=sample_concordance.concordant + sample_concordance.discordant)
+    sample_concordance = sample_concordance.annotate(
+        frac_concordant=sample_concordance.concordant / sample_concordance.total)
     sample_concordance.export(str(output_prefix) + ".typed.by_sample.tsv")
 
     variant_concordance = variant_concordance.select(
         concordant=hl.sum([variant_concordance.concordance[i][i] for i in range(2, 5)]),
         discordant=variant_concordance.n_discordant)
     variant_concordance = variant_concordance.annotate(
-        total=variant_concordance.concordant + variant_concordance.discordant,
-        frac_concordant=(variant_concordance.concordant + variant_concordance.discordant) / variant_concordance.total)
+        total=variant_concordance.concordant + variant_concordance.discordant)
+    variant_concordance = variant_concordance.annotate(
+        frac_concordant=variant_concordance.concordant / variant_concordance.total)
     variant_concordance.export(str(output_prefix) + ".typed.by_variant.tsv")
 
 
