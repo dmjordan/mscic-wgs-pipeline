@@ -1580,7 +1580,8 @@ rule imputation_concordance:
         GWAS_STEM + ".mt",
         IMPUTED_CHRALL_GWAS_STEM + ".mt"
     output:
-        multiext("WGS_imputed_concordance.GWAS_filtered", ".typed.by_sample.tsv", ".typed.by_variant.tsv")
+        multiext("WGS_imputed_concordance.GWAS_filtered", ".typed.by_sample.tsv", ".typed.by_variant.tsv",
+            ".imputed.by_sample.tsv", ".imputed.by_variant.tsv", ".all.by_sample.tsv", ".all.by_variant.tsv")
     params:
         hail_cmd="imputation-concordance",
         hail_extra_args=lambda wildcards, output: ".".join(output[0].split(".")[:-3])
