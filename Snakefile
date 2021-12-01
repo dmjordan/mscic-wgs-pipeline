@@ -704,7 +704,7 @@ rule regenie_step1_filter:
     output:
         directory("{prefix}.regenie_step1_filtered.mt")
     params:
-        hail_cmd="filter-ac",
+        hail_cmd="filter-regenie-step1",
         hail_extra_args="1"
     resources:
         cpus = 128,
@@ -843,7 +843,7 @@ rule regenie_step2_HGI_longcovid:
         sample=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.sample",
         pheno="regenie_phenotypes.txt",
         covar="regenie_covars.txt",
-        step1=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.regenie_step1_filtered.list"
+        step1=f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.HGI_longcovid_pred.list"
     resources:
         cpus=32,
         single_host=1,

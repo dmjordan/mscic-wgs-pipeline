@@ -318,7 +318,7 @@ def filter_ac(mt_path, ac_value):
 def filter_ac(mt_path, ac_value):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
-    mt = mt.filter_rows(mt.TYPED | mt.TYPED_ONLY)
+    mt = mt.filter_rows(mt.info.TYPED | mt.info.TYPED_ONLY)
     mt = mt.annotate_rows(gt_stats=hl.agg.call_stats(mt.GT, mt.alleles))
     mt = mt.filter_rows(mt.gt_stats.AC.any(lambda ac: (ac > ac_value) & (ac < mt.gt_stats.AN - ac_value)))
     mt.write(str(mt_path.with_suffix(f".regenie_step1_filtered.mt")), overwrite=True)
