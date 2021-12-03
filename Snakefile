@@ -102,6 +102,13 @@ rule imputed_gwas_traits_of_interest:
         expand("IMPUTED_{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
 
+rule intersected_gwas_traits_of_interest:
+    input:
+        expand("{phenotype}_IMPUTED_SUBSET.GENESIS.{suffix}",
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"]),
+        expand("IMPUTED_{phenotype}_WGS_SUBSET.GENESIS.{suffix}",
+            phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
+
 
 rule gwas_traits_of_interest_force_pcs:
     input:
@@ -457,7 +464,19 @@ rule biome_match_samples:
             mem_mb = 16000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-
+rule sample_difference:
+    input:
+        mt1="{prefix1}.mt",
+        mt2="{prefix2}.mt"
+    output:
+        "{prefix1}.difference.{prefix2}.indiv_list.txt"
+    params:
+        hail_cmd="diff-samples",
+        pass_output=True
+    resources:
+        cpus=32,
+        mem_mb=16000
+    script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
 # race and ancestry steps
 
 rule king:
@@ -1126,6 +1145,49 @@ rule null_model_force_pcs:
                                                 {SAMPLE_MATCHED_STEM} \\
                                                 {wildcards.phenotype_untagged} \\
                                                 _FORCEPCS
+        """
+
+rule wgs_null_model_imputed_subset:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        samples=f"{SAMPLE_MATCHED_STEM}.difference.{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.indiv_list.txt"
+    output:
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_IMPUTED_SUBSET.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=16000
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive.R")
+    shell:
+        """
+        ml openmpi
+        sed 1d {input.samples} | readarray -t samples
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
+                                                {SAMPLE_MATCHED_STEM} \\
+                                                {wildcards.phenotype_untagged} \\
+                                                _IMPUTED_SUBSET \\
+                                                ${{samples[@]}}
+        """
+
+rule imputed_null_model_wgs_subset:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        samples=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.difference.{SAMPLE_MATCHED_STEM}.indiv_list.txt"
+    output:
+        rds=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.IMPUTED_{{phenotype_untagged}}_WGS_SUBSET.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=20000
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive_imputed.R")
+    shell:
+        """
+        ml openmpi
+        sed 1d {input.samples} | readarray -t samples
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged} \\
+                _WGS_SUBSET ${{samples[@]}}
         """
 
 rule run_gwas:
