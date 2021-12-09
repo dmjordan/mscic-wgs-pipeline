@@ -91,6 +91,14 @@ wildcard_constraints:
 
 # aggregation rules
 
+rule main_gwas:
+    input:
+        expand("{phenotype}.GENESIS.{suffix}",
+            phenotype=TRAITS_OF_INTEREST +
+                      [f"IMPUTED_{trait}" for trait in TRAITS_OF_INTEREST] +
+                      [f"BIOME_GSA_{trait}" for trait in BIOME_TRAITS] +
+                      [f"{trait}_FORCEPCS" for trait in TRAITS_OF_INTEREST],
+            suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
 rule gwas_traits_of_interest:
     input:
@@ -108,7 +116,6 @@ rule intersected_gwas_traits_of_interest:
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"]),
         expand("IMPUTED_{phenotype}_WGS_SUBSET.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "qq.png", "manhattan.png"])
-
 
 rule gwas_traits_of_interest_force_pcs:
     input:
