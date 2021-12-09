@@ -284,7 +284,7 @@ def subset_mt_samples(mt_path, indiv_list, out_path):
     mt.write(str(out_path.resolve()), overwrite=True)
 
 
-@cli.command("intersect-samples")
+@cli.command("diff-samples")
 @click.argument("mt_path_1", type=ClickPathlibPath())
 @click.argument("mt_path_2", type=ClickPathlibPath())
 @click.argument("out_path", type=ClickPathlibPath())
@@ -293,8 +293,8 @@ def intersect_samples(mt_path_1, mt_path_2, out_path):
     mt_path_2 = mt_path_2.resolve()
     mt1 = hl.read_matrix_table(str(mt_path_1))
     mt2 = hl.read_matrix_table(str(mt_path_2))
-    merged = mt1.anti_join_cols(mt2)
-    merged.s.export(out_path)
+    merged = mt1.anti_join_cols(mt2.cols())
+    merged.s.export(str(out_path))
 
 
 @cli.command("filter-ac-by-phenotype")

@@ -83,7 +83,7 @@ wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
     race=r"WHITE|BLACK|ASIAN|HISPANIC|EUR|AFR|AMR|EAS|SAS|ALL",
     population=r"EUR|AFR|AMR|EAS|SAS",
-    phenotype_untagged=r"[a-z_]+",
+    phenotype_untagged=r"(?!_)[a-z_]+(?<!_)",
     phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
     prefix=".*(?<!shards)"
@@ -688,20 +688,6 @@ rule pext_lof_filter:
         mem_mb = 12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
-rule ac_filter_by_phenotype:
-    input:
-        "{prefix}.mt",
-        DESIGN_MATRIX
-    output:
-        directory("{prefix}.{phenotype,[A-Za-z0-9_]+}_filtered.mt")
-    params:
-        hail_cmd="filter-ac-by-phenotype",
-        hail_extra_args=lambda wildcards: wildcards.phenotype
-    resources:
-        cpus = 128,
-        mem_mb = 12000
-    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
-
 
 rule ac_filter:
     input:
@@ -731,7 +717,7 @@ rule regenie_step1_filter:
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 
-ruleorder: chrom_merge > gwas_filter > regenie_step1_filter > ac_filter > ac_filter_by_phenotype
+ruleorder: chrom_merge > gwas_filter > regenie_step1_filter > ac_filter
 
 rule chrom_split:
     input:
@@ -1210,9 +1196,9 @@ rule run_gwas:
 rule run_imputed_gwas:
     input:
         gds=f"{IMPUTED_CHRALL_GWAS_STEM}.shards.seq.gds",
-        null_model=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.IMPUTED_{{phenotype_untagged}}.null.RDS"
+        null_model=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.IMPUTED_{{phenotype_untagged}}{{phenotype_suffix}}.null.RDS"
     output:
-        txt="IMPUTED_{phenotype_untagged}.GENESIS.assoc.txt"
+        txt="IMPUTED_{phenotype_untagged}{phenotype_suffix,[A-Z_]*}.GENESIS.assoc.txt"
     resources:
         cpus=128,
         mem_mb=11500
@@ -1221,7 +1207,7 @@ rule run_imputed_gwas:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} IMPUTED_{wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} IMPUTED_{wildcards.phenotype_untagged}{wildcards.phenotype_suffix}
         """
 
 rule run_biome_gwas:
