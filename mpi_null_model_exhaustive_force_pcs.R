@@ -19,7 +19,7 @@ cat("subset:", if (subset_tag == "") "<none>" else subset_tag, fill=TRUE)
 cat("excluded samples:", if (length(exclude_samples) > 0) exclude_samples else "<none>", fill=TRUE)
 
 read_csv("/sc/arion/projects/mscic1/data/covariates/clinical_data_deidentified_allsamples/jordad05/625_Samples.cohort.QC_filtered.sample_matched.age_flowcell_PCAir_dmatrix.csv") %>%
-  rename(scanID=X1) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
+  rename(scanID=Subject_ID) %>% mutate(race_factor = factor(race_factor)) -> clinical_table
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
 sample.id <- setdiff(getScanID(scan_annot), exclude_samples)
 
