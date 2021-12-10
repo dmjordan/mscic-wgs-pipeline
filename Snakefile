@@ -96,8 +96,7 @@ rule main_gwas:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST +
                       [f"IMPUTED_{trait}" for trait in TRAITS_OF_INTEREST] +
-                      [f"BIOME_GSA_{trait}" for trait in BIOME_TRAITS] +
-                      [f"{trait}_FORCEPCS" for trait in TRAITS_OF_INTEREST],
+                      [f"BIOME_GSA_{trait}" for trait in BIOME_TRAITS]
             suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
 rule gwas_traits_of_interest:
@@ -1076,6 +1075,7 @@ rule imputed_null_model:
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
+
 rule biome_null_model:
     input:
         "{prefix}.biome_dmatrix.csv",

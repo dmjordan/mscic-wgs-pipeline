@@ -29,9 +29,9 @@ clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
               "sex",
               "age_sex")) -> non_pc_covars
 
-map(1:10, ~paste0("pc", 1:.x)) %>% prepend(list(character())) -> pcs
+pcs <- paste0("pc", 1:10)
 map(1:length(non_pc_covars), ~ combn(non_pc_covars, .x, simplify=FALSE)) %>%
-  flatten %>% cross2(pcs) %>% map(unlist) -> all_covar_combinations
+  flatten %>% map(unlist) %>% map(~ c(.x, pcs)) -> all_covar_combinations
 
 family <- if (clinical_table %>% filter(.[[endpoint]] != 0 & .[[endpoint]] != 1) %>% tally > 0) "gaussian" else "binomial"
 
