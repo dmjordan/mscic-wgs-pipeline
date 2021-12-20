@@ -19,12 +19,17 @@ binary_phenotypes = ["ever_covid", "covid_encounter", "ever_icu", "deceased", "r
                      "severity_ever_moderate", "severity_ever_severe", "severity_ever_eod", "max_severity_moderate",
                      "severity_ever_decreased", "severity_ever_increased", "severity_ever_decreased_counting_discharge",
                      "severity_ever_increased_counting_death",
+                     "severe_at_admission", "eod_at_admission",
+                     "severe_at_discharge", "eod_at_discharge",
+                     "post_acute_symptoms", "post_acute_quality_of_life",
                      "blood_viral_load_detected", "blood_viral_load_detected_severe_only"]
 continuous_phenotypes = ["max_sofa", "max_sofa_icu_only", "max_who", "max_who_minus_death", "highest_titer",
                          "highest_titer_agm_only", "max_viral_load_cn1", "max_viral_load_cn2", "max_viral_load_cn3",
                          "days_onset_to_encounter", "covid_encounter_days", "days_onset_to_icu",
                          "days_encounter_to_icu", "icu_hours_cumulative",
-                         "blood_viral_load_bitscore", "blood_viral_load_bitscore_severe_only"]
+                         "blood_viral_load_bitscore", "blood_viral_load_bitscore_severe_only", 
+                         "max_severity_3value", "max_severity_4value", 
+                         "severity_at_admission", "who_at_admission", "severity_at_discharge", "who_at_discharge"]
 all_phenotypes = binary_phenotypes + continuous_phenotypes + \
                 [f"{phenotype}_irnt" for phenotype in continuous_phenotypes] + \
                 [f"{phenotype}_log" for phenotype in continuous_phenotypes] + \
@@ -45,14 +50,20 @@ def piecewise_cummax(series):
     return value
 
 
-def ever_decreased(series):
+def ever_decreased(series, min_count=3):
     """Calculates whether the score ever decreased during the series."""
-    return series.pct_change().lt(0).any()
+    if len(series.dropna()) >= min_count:
+        return series.pct_change().lt(0).any()
+    else:
+        return np.nan
 
 
-def ever_increased(series):
+def ever_increased(series, min_count=3):
     """Calculates whether the score ever increased during the series"""
-    return series.pct_change().gt(0).any()
+    if len(series.dropna()) >= min_count:
+        return series.pct_change().gt(0).any()
+    else:
+        return np.nan
 
 
 def build_design_matrix(covariates_path, design_matrix_path):
@@ -101,6 +112,11 @@ def build_design_matrix(covariates_path, design_matrix_path):
         severity_ever_severe=("Severity", lambda x: x.eq("Severe COVID-19").any()),
         severity_ever_eod=("Severity", lambda x: x.eq("Severe COVID-19 with EOD").any()),
         max_severity_moderate=("Severity", lambda x: x.max() == "Moderate COVID-19"),
+        max_severity_3value=("Severity", "max"),
+        severity_at_admission=("Severity", "first"),
+        who_at_admission=("WHO_Ordinal", "first"),
+        severity_at_discharge=("Severity", "last"),
+        who_at_discharge=("WHO_Ordinal", "last"),
         max_viral_load_cn1=("Viral_Load_CN1_per_mL", "max"),
         max_viral_load_cn2=("Viral_Load_CN2_per_mL", "max"),
         max_viral_load_cn3=("Viral_Load_CN3_per_mL", "max")
@@ -155,6 +171,16 @@ def build_design_matrix(covariates_path, design_matrix_path):
 
     clinical_table["severity_ever_increased_counting_death"] = clinical_table.severity_ever_increased | clinical_table.deceased
     clinical_table["severity_ever_decreased_counting_discharge"] = clinical_table.severity_ever_decreased | clinical_table.discharged
+
+    clinical_table["max_severity_3value"] = clinical_table.max_severity_3value.cat.rename_categories([1,2,3]).astype(float)
+    clinical_table["severity_at_admission"] = clinical_table.severity_at_admission.cat.rename_categories([1,2,3]).astype(float)
+    clinical_table["severe_at_admission"] = clinical_table.severity_at_admission >= 2
+    clinical_table["eod_at_admission"] = clinical_table.severity_at_admission == 3
+    clinical_table["severity_at_discharge"] = clinical_table.severity_at_discharge.cat.rename_categories([1,2,3]).astype(float)
+    clinical_table["severe_at_discharge"] = clinical_table.severity_at_discharge >= 2
+    clinical_table["eod_at_discharge"] = clinical_table.severity_at_discharge == 3
+    clinical_table["max_severity_4value"] = clinical_table.max_severity_3value.where(~(clinical_table.deceased.astype("boolean")), 4)
+
 
     # invert senses of "recovered," "discharged," and "ever_decreased" so that cases remain bad
     clinical_table["recovered"] = ~(clinical_table.recovered.astype("boolean"))

@@ -56,16 +56,18 @@ EXCLUDED_REGENIDS_TABLE = REGEN_WORKING_DIR / "Regen_Biobank.csv"
 BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
 BIOME_GSA_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_gsa_dmatrix.csv"
 
-TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_severe", 
-        "severity_ever_eod", "max_who",
-        "severity_ever_increased", "severity_ever_decreased", "who_ever_increased", "who_ever_decreased",
+TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_eod", 
+        "severe_at_admission", "eod_at_discharge",
+        "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
-TRAITS_OF_INTEREST_BINARY = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod",
-                             "severity_ever_increased", "severity_ever_decreased", "who_ever_increased",
-                             "who_ever_decreased", "recovered"]
 
-TRAITS_OF_INTEREST_QUANTITATIVE = ["max_who", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
+TRAITS_OF_INTEREST_BINARY = ["max_severity_moderate", "severity_ever_eod",
+                             "severity_ever_increased", "who_ever_increased",
+                             "who_ever_decreased", "recovered",
+                             "severe_at_admission", "eod_at_discharge"]
+
+TRAITS_OF_INTEREST_QUANTITATIVE = ["highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
 BIOME_TRAITS = ["max_severity_moderate", "severity_ever_severe", "severity_ever_eod",
                 "max_who", "severity_ever_increased", "severity_ever_decreased",
@@ -83,7 +85,7 @@ wildcard_constraints:
     chrom=r"chr([0-9]{1,2}|[XYM])",
     race=r"WHITE|BLACK|ASIAN|HISPANIC|EUR|AFR|AMR|EAS|SAS|ALL",
     population=r"EUR|AFR|AMR|EAS|SAS",
-    phenotype_untagged=r"(?!_)[a-z_]+(?<!_)",
+    phenotype_untagged=r"(?!_)[a-z0-9_]+(?<!_)",
     phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
     prefix=".*(?<!shards)"
@@ -96,13 +98,15 @@ rule main_gwas:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST +
                       [f"IMPUTED_{trait}" for trait in TRAITS_OF_INTEREST] +
-                      [f"BIOME_GSA_{trait}" for trait in BIOME_TRAITS]
+                      [f"BIOME_GSA_{trait}" for trait in BIOME_TRAITS],
             suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
 rule gwas_traits_of_interest:
     input:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
+
+
 
 rule imputed_gwas_traits_of_interest:
     input:
