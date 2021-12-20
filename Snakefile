@@ -1648,3 +1648,32 @@ rule imputation_concordance:
         cpus = 128,
         mem_mb = 11500
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
+# MAMA
+
+rule iid_ances_file:
+    output:
+        "iid_ances_file.txt"
+    input:
+        expand("{race}.indiv_list.txt", race=['EUR', 'AFR', 'AMR', 'EAS', 'SAS'])
+    shell: """
+    for anc in EUR AFR AMR EAS SAS
+        do awk -v OFS='\t' -v anc=$anc 'NR > 1 {{ print $1, anc }}' $anc.indiv_list.txt
+    done > {output}
+    """
+
+rule snp_ances_file:
+    output:
+        "snp_ances_file.txt"
+    input:
+        expand(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bim", race=['EUR', 'AFR', 'AMR', 'EAS', 'SAS'])
+    run:
+        import pandas as pd
+        anc_series = {}
+        for anc in 'EUR', 'AFR', 'AMR', 'EAS', 'SAS':
+            bimfile = pd.read_table(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bim".format(race=anc), header=None)
+            anc_series[anc] = pd.Series(1.0, index=bimfile[1])
+        output_table = pd.DataFrame.from_dict(anc_series)
+        output_table.fillna(0.0)
+        output_table.index.name = "SNP"
+        output_table.to_csv(output[0], sep='\t', header=True, index=True)
