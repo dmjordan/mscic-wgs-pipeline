@@ -1066,6 +1066,25 @@ rule imputed_null_model:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
+rule imputed_null_model_race:
+    input:
+        DESIGN_MATRIX,
+        rds=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.PCRelate.RDS",
+        indiv_list="{race}.indiv_list.txt"
+    output:
+        rds=f"{IMPUTED_CHRALL_SAMPLE_MATCHED_STEM}.IMPUTED_{{phenotype_untagged}}_{{race}}.null.RDS"
+    resources:
+        cpus=128,
+        mem_mb=20000
+    params:
+        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive_imputed_single_race.R")
+    shell:
+        """
+        ml openmpi
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        """
+
+
 rule biome_null_model:
     input:
         "{prefix}.biome_dmatrix.csv",
@@ -1080,7 +1099,7 @@ rule biome_null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {wildcards.prefix} {wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {wildcards.prefix} {wildcards.phenotype_untagged} {wildcards.race}
         """
 
 
