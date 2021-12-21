@@ -1667,6 +1667,8 @@ rule snp_ances_file:
         "snp_ances_file.txt"
     input:
         expand(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bim", race=['EUR', 'AFR', 'AMR', 'EAS', 'SAS'])
+    resources:
+        mem_mb=32000
     run:
         import pandas as pd
         anc_series = {}
