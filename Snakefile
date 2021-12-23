@@ -99,7 +99,8 @@ rule main_gwas:
             phenotype=TRAITS_OF_INTEREST +
                       [f"IMPUTED_{trait}" for trait in TRAITS_OF_INTEREST] +
                       [f"BIOME_GSA_{trait}" for trait in BIOME_TRAITS],
-            suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
+            suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"]),
+        expand("imputed_mama_chrall_{race}_{phenotype}.res", race=["AFR", "AMR", "EAS", "EUR", "SAS"], phenotype=TRAITS_OF_INTEREST)
 
 rule gwas_traits_of_interest:
     input:
@@ -1672,7 +1673,7 @@ rule imputation_concordance:
 
 rule iid_ances_file:
     output:
-        "iid_ances_file.txt"
+        "imputed_iid_ances_file.txt"
     input:
         expand("{race}.indiv_list.txt", race=['EUR', 'AFR', 'AMR', 'EAS', 'SAS'])
     shell: """
@@ -1683,18 +1684,78 @@ rule iid_ances_file:
 
 rule snp_ances_file:
     output:
-        "snp_ances_file.txt"
+        "imputed_snp_ances_file.{chrom}.txt"
     input:
-        expand(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bim", race=['EUR', 'AFR', 'AMR', 'EAS', 'SAS'])
+        expand(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.bim", race=['EUR', 'AFR', 'AMR', 'EAS', 'SAS'], allow_missing=True)
     resources:
         mem_mb=32000
     run:
         import pandas as pd
         anc_series = {}
         for anc in 'EUR', 'AFR', 'AMR', 'EAS', 'SAS':
-            bimfile = pd.read_table(f"{IMPUTED_CHRALL_RACE_FILTERED_STEM}.bim".format(race=anc), header=None)
+            bimfile = pd.read_table(f"{IMPUTED_SPLITCHR_RACE_FILTERED_STEM}.bim".format(race=anc), header=None)
             anc_series[anc] = pd.Series(1.0, index=bimfile[1])
         output_table = pd.DataFrame.from_dict(anc_series)
         output_table.fillna(0.0)
         output_table.index.name = "SNP"
         output_table.to_csv(output[0], sep='\t', header=True, index=True)
+
+rule mama_multiancestry_ld_score:
+    output:
+        "imputed_mama_ldscore/{chrom}.l2.ldscore.gz"
+    input:
+        "snp_ances_file.{chrom}.txt",
+        "iid_ances_file.txt",
+        multiext(f"{IMPUTED_SPLITCHR_GWAS_STEM}", ".bed", ".bim", ".fam")
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mama", "mama_ldscores.py"),
+        bed_prefix=IMPUTED_SPLITCHR_GWAS_STEM
+    resources:
+        mem_mb=32000,
+        time_min=300
+    shell:
+        """
+        {params.script_path}} \
+            --snp-ances {input[0]} \
+            --ances-path {input[1]} \
+            --ld-wind-kb 1000 \
+            --bfile-merged-path {params.bed_prefix} \
+            --out imputed_mama_ldscore/{wildcards.chrom}
+        """
+
+rule mama:
+    output:
+        expand("imputed_mama_{chrom}_{phenotype}_{race}.res", race=["AMR", "AFR", "EAS", "EUR", "SAS"], allow_missing=True)
+    input:
+        expand("IMPUTED_{phenotype}_{race}.GENESIS.assoc.txt", race=["AMR", "AFR", "EAS", "EUR", "SAS"], allow_missing=True),
+        "imputed_mama_ldscore/{chrom}.l2.ldscore.gz"
+    resources:
+        mem_mb=32000,
+        time_min=300
+    params:
+        script_path=os.path.join(config["scriptsdir"],"mama","mama.py"),
+        output_prefix=lambda wildcards: f"imputed_mama_{wildcards.chrom}"
+    shell:
+        """
+        {params.script_path} \
+            --sumstats  {input[0]},AMR,{wildcards.phenotype} \
+                        {input[1]},AFR,{wildcards.phenotype} \
+                        {input[2]},EAS,{wildcards.phenotype} \
+                        {input[3]},EUR,{wildcards.phenotype} \
+                        {input[4]},SAS,{wildcards.phenotype} \
+            --ld-scores {input[5]} \
+            --replace-snp-col-match 'variant[.]id' \
+            --replace-n-col-match 'n[.]obs' \
+            --replace-beta-col-match 'Est' \
+            --replace-se-col-match 'Est[.]SE' \
+            --replace-p-col-match 'Score[.]pval' \
+            --allowed-chr-values {wildcards.chrom} \
+            --out params.output_prefix 
+        """
+
+rule merge_mama_output:
+    output:
+        "imputed_mama_chrall_{phenotype}_{race}.res"
+    input:
+        expand("imputed_mama_{chrom}_{phenotype}_{race}.res",chrom=[f"chr{chr}" for chr in range(1,23)] + ["chrX"], allow_missing=True)
+    shell: "awk 'NR == FNR || NR > 1' {input} > {output}"
