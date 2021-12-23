@@ -624,6 +624,19 @@ rule rare_filter:
         mem_mb=12000
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
+rule rare_filter_addition:
+    input:
+        mt="{prefix}.{filter}_filtered.mt"
+    output:
+        mt=directory("{prefix}.rare_{filter}_filtered.mt")
+    params:
+        hail_cmd="rare-filter",
+        pass_output=True
+    resources:
+        cpus=128,
+        mem_mb=12000
+    script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
+
 rule exome_filter:
     input:
         mt="{prefix}.mt",
@@ -1081,7 +1094,7 @@ rule imputed_null_model_race:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged} {wildcards.race}
         """
 
 
@@ -1099,7 +1112,7 @@ rule biome_null_model:
     shell:
         """
         ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {wildcards.prefix} {wildcards.phenotype_untagged} {wildcards.race}
+        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {wildcards.prefix} {wildcards.phenotype_untagged} 
         """
 
 
