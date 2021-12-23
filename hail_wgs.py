@@ -210,12 +210,18 @@ def gwas_filter(mt_path):
 
 @cli.command("rare-filter")
 @click.argument("mt_path", type=ClickPathlibPath())
-def rare_filter(mt_path):
+@click.argument("output_path", type=ClickPathlibPath(), default=None)
+def rare_filter(mt_path, output_path=None):
     mt_path = mt_path.resolve()
     mt = hl.read_matrix_table(str(mt_path))
     mt = hl.variant_qc(mt)
     mt = mt.filter_rows(mt.variant_qc.AC.any(lambda ac: ac == 1))
-    mt.write(str(mt_path.with_suffix(".rare_filtered.mt")), overwrite=True)
+    if output_path is None:
+        output_path = mt_path.with_suffix(".rare_filtered.mt")
+    else:
+        output_path = output_path.resolve()
+    mt.write(str(output_path), overwrite=True)
+
 
 
 @cli.command("ld-prune")

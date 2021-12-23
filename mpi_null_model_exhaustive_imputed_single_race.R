@@ -73,7 +73,7 @@ if (length(succeeded_models) == 0) {
 map_dbl(succeeded_models, "AIC") %>% compact %>% which.min %>% pluck(succeeded_models, .) -> model
 cat("Best combination among succeeded models:", model$covars, "\n")
 
-saveRDS(model, paste(file_prefix, paste0("IMPUTED_", endpoint, subset_tag), "null", "RDS", sep="."))
+saveRDS(model, paste(file_prefix, paste("IMPUTED", endpoint, race, sep="_"), "null", "RDS", sep="."))
 
 closeCluster(cl)
 mpi.quit()
