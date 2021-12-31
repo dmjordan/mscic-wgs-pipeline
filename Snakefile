@@ -160,11 +160,17 @@ rule coloc2_gtex_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
+rule coloc2_gtex_imputed_traits_of_interest:
+    input:
+        expand("coloc2/IMPUTED_{phenotype}.{tissue}.full_table.txt", phenotype=TRAITS_OF_INTEREST, tissue=ALL_TISSUES)
 
 rule coloc2_mscic_traits_of_interest:
     input:
         expand("coloc2/{phenotype}.Whole_Blood_mscic{race}.full_table.txt", phenotype=TRAITS_OF_INTEREST, race=["WHITE", "BLACK", "HISPANIC", "ASIAN", "ALL"])
 
+rule coloc2_mscic_singlerace_traits_of_interest:
+    input:
+        expand("coloc2/{phenotype}_{race}.Whole_Blood_mscic{race}.full_table.txt", phenotype=TRAITS_OF_INTEREST, race=["WHITE", "BLACK", "HISPANIC", "ASIAN"])
 
 rule coloc2_gtex_go_traits_of_interest:
     input:
@@ -188,6 +194,9 @@ rule regenie_imputed_hgi_longcovid:
         ext=[".bgz", ".qq.png", ".manhattan.png"],
         race=["EUR", "AFR"])
 
+rule imputed_mama_traits_of_interest:
+    input:
+        expand("imputed_mama_chrall_{race}_{phenotype}.res", race=["AFR", "AMR", "EUR"], phenotype=TRAITS_OF_INTEREST)
 
 # summary / report rules
 
@@ -1768,4 +1777,4 @@ rule merge_mama_output:
         "imputed_mama_chrall_{race}_{phenotype}.res"
     input:
         expand("imputed_mama_{chrom}_{race}_{phenotype}.res",chrom=[f"chr{chr}" for chr in range(1,23)] + ["chrX"], allow_missing=True)
-    shell: "awk 'NR == FNR || NR > 1' {input} > {output}"
+    shell: "awk 'NR == FNR || FNR > 1' {input} > {output}"
