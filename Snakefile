@@ -1472,6 +1472,25 @@ rule ldsc:
                 --out {wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg"
         """
 
+rule ldsc_mama:
+    input:
+        "IMPUTED_{phenotype_1}.GENESIS.assoc.sumstats.gz",
+        "IMPUTED_{phenotype_2}.GENESIS.assoc.sumstats.gz",
+        expand("imputed_mama_ldscore/{chrom}.l2.ldscore.gz", chrom=[f"chr{i}" for i in range(1,23)] + ["chrX"])
+    output:
+        "imputed_mama.{phenotype_1}.{phenotype_2}.assoc.rg.log"
+    resources:
+        mem_mb=16000
+    shell:
+        """
+        ml ldsc
+        ldsc.py --rg {input[1]},{input[2]} \ 
+                --ref-ld-chr imputed_mama_ldscore/ \
+                --w-ld-chr imputed_mama_ldscore/ \
+                --out imputed_mama.{wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg"
+        """
+
+
 # MetaXcan
 
 
