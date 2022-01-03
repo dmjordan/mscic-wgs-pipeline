@@ -57,7 +57,7 @@ BIOME_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_dmatrix.csv"
 BIOME_GSA_DESIGN_MATRIX = REGEN_WORKING_DIR / "regenid_gsa_dmatrix.csv"
 
 TRAITS_OF_INTEREST = ["max_severity_moderate", "severity_ever_eod", 
-        "severe_at_admission", "eod_at_discharge",
+        "severe_at_admission",
         "severity_ever_increased", "who_ever_increased", "who_ever_decreased",
         "recovered", "highest_titer_irnt", "days_onset_to_encounter_log", "covid_encounter_days_log"]
 
@@ -107,6 +107,15 @@ rule gwas_traits_of_interest:
         expand("{phenotype}.GENESIS.{suffix}",
             phenotype=TRAITS_OF_INTEREST, suffix=["assoc.txt", "assoc.for_locuszoom.txt.bgz", "qq.png", "manhattan.png"])
 
+
+rule ldsc_all_pairs:
+    input:
+        expand("{traits}.assoc.rg.log", traits=[f"{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(TRAITS_OF_INTEREST, 2)])
+
+
+rule eur_ldsc_all_pairs:
+    input:
+        expand("{traits}.assoc.eur_rg.log", traits=[f"{trait1}.{trait2}" for trait1, trait2 in itertools.combinations(TRAITS_OF_INTEREST, 2)])
 
 
 rule imputed_gwas_traits_of_interest:
@@ -1438,7 +1447,7 @@ rule ld_scores:
         """ml ldsc
         mkdir -p {GWAS_STEM}.ld_chr
         ldsc.py --bfile {GWAS_STEM}.{wildcards.chrom} \
-        -l2 --ld-wind-kb 1000 --out {GWAS_STEM}/{wildcards.chrom}"""
+        --l2 --ld-wind-kb 1000 --out {GWAS_STEM}.ld_chr/{wildcards.chrom}"""
 
 rule munge_sumstats:
     input:
@@ -1448,7 +1457,7 @@ rule munge_sumstats:
     shell:
         """ml ldsc
         munge_sumstats.py --sumstats {input.assoc} \
-                          --out {output.sumstats} \
+                          --out {wildcards.phenotype}.GENESIS.assoc \
                           --snp variant.id --N-col n.obs --frq freq \
                           --a1 effect.allele --a2 other.allele \
                           --p Score.pval --signed-sumstats Est,0
@@ -1466,11 +1475,31 @@ rule ldsc:
     shell:
         """
         ml ldsc
-        ldsc.py --rg {input[1]},{input[2]} \ 
+        ldsc.py --rg {input[0]},{input[1]} \
                 --ref-ld-chr {GWAS_STEM}.ld_chr/ \
                 --w-ld-chr {GWAS_STEM}.ld_chr/ \
-                --out {wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg"
+                --out {wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg
         """
+
+
+rule ldsc_eur:
+    input:
+        "IMPUTED_{phenotype_1}_EUR.GENESIS.assoc.sumstats.gz",
+        "IMPUTED_{phenotype_2}_EUR.GENESIS.assoc.sumstats.gz",
+        expand(f"eur_w_ld_chr/{{chrom}}.l2.ldscore.gz", chrom=[str(i) for i in range(1,23)])
+    output:
+        "{phenotype_1}.{phenotype_2}.assoc.eur_rg.log"
+    resources:
+        mem_mb=16000
+    shell:
+        """
+        ml ldsc
+        ldsc.py --rg {input[0]},{input[1]} \
+                --ref-ld-chr eur_w_ld_chr/ \
+                --w-ld-chr eur_w_ld_chr/ \
+                --out {wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.eur_rg
+        """
+
 
 rule ldsc_mama:
     input:
@@ -1484,10 +1513,10 @@ rule ldsc_mama:
     shell:
         """
         ml ldsc
-        ldsc.py --rg {input[1]},{input[2]} \ 
-                --ref-ld-chr imputed_mama_ldscore/ \
-                --w-ld-chr imputed_mama_ldscore/ \
-                --out imputed_mama.{wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg"
+        ldsc.py --rg {input[0]},{input[1]} \
+                --ref-ld-chr imputed_mama_ldscore/chr \
+                --w-ld-chr imputed_mama_ldscore/chr \
+                --out imputed_mama.{wildcards.phenotype_1}.{wildcards.phenotype_2}.assoc.rg
         """
 
 
