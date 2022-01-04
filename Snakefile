@@ -1834,6 +1834,6 @@ rule pcrelate_to_gcta_grm:
         multiext("{prefix}.grm", ".gz", ".id")
     input:
         "{prefix}.PCRelate.RDS"
-    params:
-        genesis_cmd="format_pcrelate_for_gcta"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+    conda:
+        "env/tidyverse.yaml"
+    script: os.path.join(config["scriptsdir"],"make_gcta_grm.R")
