@@ -1,0 +1,9 @@
+name: genesis-genio
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - bioconda-genesis
+  - r-tidyverse
+  - r-vroom

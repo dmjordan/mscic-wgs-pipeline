@@ -1831,9 +1831,9 @@ rule merge_mama_output:
 
 rule pcrelate_to_gcta_grm:
     output:
-        multiext("{prefix}.grm", ".gz", ".id")
+        multiext("{prefix}.grm", ".bin", ".N.bin", ".id")
     input:
         "{prefix}.PCRelate.RDS"
     conda:
-        os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
+        os.path.join(config["scriptsdir"], "env", "genesis-genio.yaml")
     script: os.path.join(config["scriptsdir"],"make_gcta_grm.R")
