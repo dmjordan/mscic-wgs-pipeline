@@ -362,8 +362,13 @@ format_pcrelate_for_gcta <- function (infile, grm_out, id_out, scaleKin=2) {
                                 ID2=factor(ID2, levels=levels(kinSelf$ID2)),
                                 nsnp=nsnp,
                                 kin=kin) -> kinBtwn
-    bind_rows(kinSelf, kinBtwn) %>% mutate(kin=scaleKin*kin) -> grm
-    grm %>% write_tsv(grm_out, col_names=FALSE)
+    bind_rows(kinSelf, kinBtwn) %>% 
+        mutate(kin=scaleKin*kin) -> grm 
+    grm %>% 
+        mutate_if(is.factor, as.integer) %>%
+        mutate_if(is.double, ~ formatC(.x, digits=4, format="f")) %>%
+        arrange(ID1, ID2) %>%
+        write_tsv(grm_out, col_names=FALSE)
 
     tibble(FID=levels(grm$ID1), IID=levels(grm$ID1)) %>% write_tsv(id_out, col_names=FALSE)
 
