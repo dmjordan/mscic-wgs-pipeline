@@ -1835,5 +1835,5 @@ rule pcrelate_to_gcta_grm:
     input:
         "{prefix}.PCRelate.RDS"
     conda:
-        "env/tidyverse.yaml"
+        os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
     script: os.path.join(config["scriptsdir"],"make_gcta_grm.R")

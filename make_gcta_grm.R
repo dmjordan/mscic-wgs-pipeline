@@ -1,9 +1,10 @@
 library(tibble)
+library(forcats)
 library(magrittr)
 library(dplyr)
 library(readr)
 
-pcrelateToTibble <- function (infile) {
+pcrelateToTibble <- function (infile, scaleKin=2) {
     pcrel <- readRDS(infile)
     pcrel$kinSelf %>% transmute(ID1=as_factor(ID),
                                 ID2=as_factor(ID),
@@ -18,13 +19,14 @@ pcrelateToTibble <- function (infile) {
 
 writeGctaGrm <- function(grm_tbl, out_prefix) {
     grm_tbl %>%
-      mutate_if(is.factor, as.integer) %>%
-      mutate_if(is.double, ~formatC(.x, digits=4, format="f")) %>%
+      mutate(ID1=as.integer(ID1),
+             ID2=as.integer(ID2),
+             kin=formatC(kin, digits=4, format="f")) %>%
       arrange(ID1, ID2) %>%
-      write_tsv(paste(out_prefix, "grm", "gz", sep="."))
+      write_tsv(paste(out_prefix, "grm", "gz", sep="."), col_names=FALSE)
 
     tibble(FID=levels(grm_tbl$ID1), IID=levels(grm_tbl$ID1)) %>%
       write_tsv(paste(out_prefix, "grm", "id", sep="."), col_names=FALSE)
 }
 
-pcrelateToTibble(snakemake@input[[1]]) %>% writeGctaGrm(snakemake@params[["out_prefix"]])
+pcrelateToTibble(snakemake@input[[1]]) %>% writeGctaGrm(snakemake@wildcards[["prefix"]])
