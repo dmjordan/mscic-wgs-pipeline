@@ -1837,3 +1837,6 @@ rule pcrelate_to_gcta_grm:
     conda:
         os.path.join(config["scriptsdir"], "env", "genesis-genio.yaml")
     script: os.path.join(config["scriptsdir"],"make_gcta_grm.R")
+
+localrules:
+    pcrelate_to_gcta_grm

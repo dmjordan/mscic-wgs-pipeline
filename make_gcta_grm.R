@@ -5,10 +5,12 @@ library(dplyr)
 library(readr)
 library(GENESIS)
 
-if (!require(genio)) { install.packages("genio") ; library(genio) }
+if (!require(genio)) { 
+    install.packages("genio", repos="https://repo.miserver.it.umich.edu/cran/")
+    library(genio)
+}
 
-pcrelateToNsnpsMatrix <- function (infile) {
-    pcrel <- readRDS(infile)
+pcrelateToNsnpsMatrix <- function (pcrel) {
     pcrel$kinSelf %>% transmute(ID1=ID,
                                 ID2=ID,
                                 value=nsnp) -> nSelf
@@ -21,5 +23,10 @@ pcrelateToNsnpsMatrix <- function (infile) {
 pcrelate <- readRDS(snakemake@input[[1]])
 grm <- pcrelateToMatrix(pcrelate)
 nsnps_matrix <- pcrelateToNsnpsMatrix(pcrelate)
+ids <- tibble(fam=rownames(grm), id=rownames(grm))
 
-write_grm(snakemake@wildcards[["prefix"]], grm, nsnps_matrix)
+write_grm(snakemake@wildcards[["prefix"]], 
+          as.matrix(grm), 
+          as.matrix(nsnps_matrix),
+          ids)
+          
