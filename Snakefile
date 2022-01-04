@@ -1826,3 +1826,14 @@ rule merge_mama_output:
     input:
         expand("imputed_mama_{chrom}_{race}_{phenotype}.res",chrom=[f"chr{chr}" for chr in range(1,23)] + ["chrX"], allow_missing=True)
     shell: "awk 'NR == FNR || FNR > 1' {input} > {output}"
+
+# GCTA
+
+rule pcrelate_to_gcta_grm:
+    output:
+        multiext("{prefix}.grm", ".gz", ".id")
+    input:
+        "{prefix}.PCRelate.RDS"
+    params:
+        genesis_cmd="format_pcrelate_for_gcta"
+    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")

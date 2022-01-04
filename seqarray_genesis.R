@@ -352,6 +352,24 @@ make_isoform_tpms_table <- function (infile, outfile) {
     1
 }
 
+format_pcrelate_for_gcta <- function (infile, grm_out, id_out, scaleKin=2) {
+    pcrel <- readRDS(infile)
+    pcrel$kinSelf %>% transmute(ID1=as_factor(ID),
+                                ID2=as_factor(ID),
+                                nsnp=nsnp,
+                                kin=0.5*(1+f)) -> kinSelf
+    pcrel$kinBtwn %>% transmute(ID1=factor(ID1, levels=levels(kinSelf$ID1)),
+                                ID2=factor(ID2, levels=levels(kinSelf$ID2)),
+                                nsnp=nsnp,
+                                kin=kin) -> kinBtwn
+    bind_rows(kinSelf, kinBtwn) %>% mutate(kin=scaleKin*kin) -> grm
+    grm %>% write_tsv(grm_out, col_names=FALSE)
+
+    tibble(FID=levels(grm$ID1), IID=levels(grm$ID1)) %>% write_tsv(id_out, col_names=FALSE)
+
+    1
+}
+
 if (exists("snakemake")) {
     switch(
         snakemake@params[["genesis_cmd"]],
@@ -360,6 +378,7 @@ if (exists("snakemake")) {
         pcrelate=run_pcrelate(snakemake@wildcards[["prefix"]]),
         gwas_plots=make_gwas_plots(snakemake@wildcards[["phenotype"]]),
         regenie_gwas_plots=make_gwas_plots_regenie(snakemake@input[[1]]),
-        isoform_table=make_isoform_tpms_table(snakemake@input[[1]], snakemake@output[[1]])
+        isoform_table=make_isoform_tpms_table(snakemake@input[[1]], snakemake@output[[1]]),
+        format_pcrelate_for_gcta=format_pcrelate_for_gcta(snakemake@input[[1]], snakemake@output[[1]], snakemake@output[[2]])
     )
 }
