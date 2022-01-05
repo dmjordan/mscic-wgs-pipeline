@@ -4,6 +4,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - bioconda-genesis
+  - bioconductor-genesis
   - r-tidyverse
   - r-vroom
