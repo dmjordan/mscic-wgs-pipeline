@@ -1837,3 +1837,12 @@ rule pcrelate_to_gcta_grm:
     conda:
         os.path.join(config["scriptsdir"], "env", "genesis-genio.yaml")
     script: os.path.join(config["scriptsdir"],"make_gcta_grm.R")
+
+
+# MR-MEGA
+rule mrmega_format:
+    output:
+        "{prefix}.mrmega.txt.gz"
+    input:
+        "{prefix}.GENESIS.assoc.txt"
+    script: os.path.join(config["scriptsdir"], "genesis2mrmega.py")
