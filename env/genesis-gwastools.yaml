@@ -1,0 +1,9 @@
+name: genesis-gwastools
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - r-tidyverse
+  - bioconductor-gwastools
+  - bioconductor-genesis

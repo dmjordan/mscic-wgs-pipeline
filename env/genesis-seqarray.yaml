@@ -1,0 +1,9 @@
+name: genesis-seqarray
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - r-tidyverse
+  - bioconductor-seqarray
+  - bioconductor-genesis

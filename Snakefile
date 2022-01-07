@@ -526,8 +526,9 @@ rule pcair:
         multiext("{prefix}.PCAir", ".RDS", ".txt")
     params:
         output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
-        genesis_cmd="pcair"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+    conda:
+        "env/genesis-gwastools.yaml"
+    script: os.path.join(config["scriptsdir"],"pcair.R")
 
 rule pcair_race:
    input:
@@ -537,8 +538,9 @@ rule pcair_race:
        multiext(f"{SAMPLE_MATCHED_STEM}.{{race}}_only.PCAir", ".RDS", ".txt")
    params:
        output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
-       genesis_cmd="pcair"
-   script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+   conda:
+       "env/genesis-gwastools.yaml"
+   script: os.path.join(config["scriptsdir"],"pcair.R")
 
 ruleorder: pcair_race > pcair
 
@@ -576,9 +578,9 @@ rule pcrelate:
         gds="{prefix}.GWAS_filtered.LD_pruned.snp.gds"
     output:
         rds="{prefix}.PCRelate.RDS"
-    params:
-        genesis_cmd="pcrelate"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+    conda:
+        "env/genesis-gwastools.yaml"
+    script: os.path.join(config["scriptsdir"],"pcrelate.R")
 
 # 1000 Genomes
 rule bcf_1000g:
