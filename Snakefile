@@ -527,7 +527,7 @@ rule pcair:
     params:
         output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
     conda:
-        "env/genesis-gwastools.yaml"
+        os.path.join(config["scriptsdir"], "env", "genesis-gwastools.yaml")
     script: os.path.join(config["scriptsdir"],"pcair.R")
 
 rule pcair_race:
@@ -539,7 +539,7 @@ rule pcair_race:
    params:
        output_stem=lambda wildcards, output: str(Path(output[0]).with_suffix('').with_suffix('')),
    conda:
-       "env/genesis-gwastools.yaml"
+        os.path.join(config["scriptsdir"], "env", "genesis-gwastools.yaml")
    script: os.path.join(config["scriptsdir"],"pcair.R")
 
 ruleorder: pcair_race > pcair
@@ -579,7 +579,7 @@ rule pcrelate:
     output:
         rds="{prefix}.PCRelate.RDS"
     conda:
-        "env/genesis-gwastools.yaml"
+        os.path.join(config["scriptsdir"], "env", "genesis-gwastools.yaml")
     script: os.path.join(config["scriptsdir"],"pcrelate.R")
 
 # 1000 Genomes

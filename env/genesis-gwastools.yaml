@@ -1,4 +1,4 @@
-name: genesis-gwastools
+name: "genesis-gwastools"
 channels:
   - bioconda
   - conda-forge
