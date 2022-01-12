@@ -631,6 +631,7 @@ rule gwas_filter:
     resources:
         cpus=128, 
         mem_mb=11500
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule rare_filter:
@@ -680,6 +681,7 @@ rule prune_ld:
     resources:
         cpus = 128,
         mem_mb = 16000
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     params:
         hail_cmd="ld-prune"
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
