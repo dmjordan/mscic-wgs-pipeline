@@ -631,6 +631,7 @@ rule gwas_filter:
     resources:
         cpus=128, 
         mem_mb=11500
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
 
 rule rare_filter:
@@ -680,6 +681,7 @@ rule prune_ld:
     resources:
         cpus = 128,
         mem_mb = 16000
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     params:
         hail_cmd="ld-prune"
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -1318,9 +1320,8 @@ rule gwas_plots:
         "{phenotype}.GENESIS.manhattan.png"
     resources:
         mem_mb="16000"
-    params:
-        genesis_cmd="gwas_plots"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+    conda: os.path.join(config["scriptsdir"], "env", "qqman.yaml")
+    script: os.path.join(config["scriptsdir"],"genesis_gwas_plots.R")
 
 rule regenie_gwas_plots:
     input:
