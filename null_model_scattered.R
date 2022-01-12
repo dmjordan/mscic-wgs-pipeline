@@ -2,9 +2,11 @@ suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(GWASTools))
 suppressPackageStartupMessages(library(GENESIS))
 
+race <- c("WHITE", "BLACK", "HISPANIC", "ASIAN")
+
 load_clinical_table <- function(dmatrix_path) {
   read_csv(dmatrix_path) %>%
-    rename(scanID=X1) %>% mutate(race_factor = factor(race_factor))
+    rename(scanID=Subject_ID) %>% mutate(race_factor = factor(race_factor))
 }
 
 get_covars <- function (clinical_table, index) {

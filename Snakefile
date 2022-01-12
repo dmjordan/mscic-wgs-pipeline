@@ -1068,22 +1068,26 @@ rule regenie_step2_merge_chroms:
         awk 'NR == 1 || FNR > 1' {input} | bgzip -c > {output}
         """
 
+rule gather_null_model:
+    input:
+        expand("{prefix}.null.{index}.RDS", index=range(1, 11254), allow_missing=True)
+    resources:
+        mem_mb=20000
+    output:
+        "{prefix}.null.RDS"
+    conda: os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
+    script: os.path.join(config["scriptsdir"], "gather_null_model.R")
+
 rule null_model:
     input:
         DESIGN_MATRIX,
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.{{index}}.RDS"
     resources:
-        cpus=128,
         mem_mb=20000
-    params:
-        script_path=os.path.join(config["scriptsdir"], "mpi_null_model_exhaustive.R")
-    shell:
-        """
-        ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
-        """
+    conda: os.path.join(config["scriptsdir"],"env","genesis-gwastools.yaml")
+    script: os.path.join(config["scriptsdir"], "null_model_scattered.R")
 
 rule imputed_null_model:
     input:
