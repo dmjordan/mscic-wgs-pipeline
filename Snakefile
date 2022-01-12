@@ -1320,9 +1320,8 @@ rule gwas_plots:
         "{phenotype}.GENESIS.manhattan.png"
     resources:
         mem_mb="16000"
-    params:
-        genesis_cmd="gwas_plots"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+    conda: os.path.join(config["scriptsdir"], "env", "qqman.yaml")
+    script: os.path.join(config["scriptsdir"],"genesis_gwas_plots.R")
 
 rule regenie_gwas_plots:
     input:

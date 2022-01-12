@@ -1,0 +1,8 @@
+name: "qqman"
+channels:
+    - bioconda
+    - conda-forge
+    - defaults
+dependencies:
+    - r-tidyverse
+    - r-qqman
