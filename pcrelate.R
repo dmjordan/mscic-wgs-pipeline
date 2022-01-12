@@ -18,3 +18,4 @@ run_pcrelate <- function(prefix) {
 
 run_pcrelate(snakemake@wildcards[["prefix"]])
 
+NULL

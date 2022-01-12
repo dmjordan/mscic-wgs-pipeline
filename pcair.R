@@ -30,3 +30,5 @@ run_pcair <- function(gdsfile, kingfile, out_prefix) {
 }
 
 run_pcair(snakemake@input[["gds"]], snakemake@input[["king"]], snakemake@params[["output_stem"]])
+
+NULL
