@@ -1106,6 +1106,10 @@ rule imputed_null_model:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}
         """
 
+# temp until null models are unified
+ruleorder: imputed_null_model > gather_null_model
+
+
 rule imputed_null_model_race:
     input:
         DESIGN_MATRIX,
@@ -1123,6 +1127,9 @@ rule imputed_null_model_race:
         ml openmpi
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged} {wildcards.race}
         """
+
+# temp until null models are unified
+ruleorder: imputed_null_model_race > gather_null_model
 
 
 rule biome_null_model:
@@ -1142,6 +1149,9 @@ rule biome_null_model:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {wildcards.prefix} {wildcards.phenotype_untagged} 
         """
 
+# temp until null models are unified
+ruleorder: biome_null_model > gather_null_model
+
 
 rule null_model_race:
     input:
@@ -1149,19 +1159,13 @@ rule null_model_race:
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
         indiv_list="{race}.indiv_list.txt"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_{{race}}.null.RDS"
+        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_{{race}}.{{index}}.null.RDS"
     resources:
-        cpus=128,
-        mem_mb=16000
-    params:
-        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_single_race.R")
-    shell:
-        """
-        ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
-                                                {SAMPLE_MATCHED_STEM} \\
-                                                {wildcards.phenotype_untagged} \\
-                                                {wildcards.race}        """
+        mem_mb=20000
+    conda: os.path.join(config["scriptsdir"],"env","genesis-gwastools.yaml")
+    script: os.path.join(config["scriptsdir"], "null_model_scattered.R")
+
+
 
 rule null_model_loo:
     input:
@@ -1183,25 +1187,9 @@ rule null_model_loo:
                                                 _leave_{wildcards.sample}_out {wildcards.sample} 
         """
 
-rule null_model_force_pcs:
-    input:
-        DESIGN_MATRIX,
-        rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
-    output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_FORCEPCS.null.RDS"
-    resources:
-        cpus=128,
-        mem_mb=16000
-    params:
-        script_path=os.path.join(config["scriptsdir"],"mpi_null_model_exhaustive_force_pcs.R")
-    shell:
-        """
-        ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} \\
-                                                {SAMPLE_MATCHED_STEM} \\
-                                                {wildcards.phenotype_untagged} \\
-                                                _FORCEPCS
-        """
+# temp until null models are unified
+ruleorder: null_model_loo > gather_null_model
+
 
 rule wgs_null_model_imputed_subset:
     input:
@@ -1226,6 +1214,10 @@ rule wgs_null_model_imputed_subset:
                                                 ${{samples[@]}}
         """
 
+# temp until null models are unified
+ruleorder: wgs_null_model_imputed_subset > gather_null_model
+
+
 rule imputed_null_model_wgs_subset:
     input:
         DESIGN_MATRIX,
@@ -1245,6 +1237,11 @@ rule imputed_null_model_wgs_subset:
         mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {IMPUTED_CHRALL_SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged} \\
                 _WGS_SUBSET ${{samples[@]}}
         """
+
+
+# temp until null models are unified
+ruleorder: imputed_null_model_wgs_subset > gather_null_model
+
 
 rule run_gwas:
     input:
