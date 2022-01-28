@@ -1083,7 +1083,7 @@ rule null_model:
         DESIGN_MATRIX,
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.{{index}}.RDS"
+        rds=temp(f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.{{index}}.RDS")
     resources:
         mem_mb=20000
     conda: os.path.join(config["scriptsdir"],"env","genesis-gwastools.yaml")
@@ -1159,12 +1159,13 @@ rule null_model_race:
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS",
         indiv_list="{race}.indiv_list.txt"
     output:
-        rds=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_{{race}}.{{index}}.null.RDS"
+        rds=temp(f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}_{{race}}.null.{{index}}.RDS")
     resources:
         mem_mb=20000
     conda: os.path.join(config["scriptsdir"],"env","genesis-gwastools.yaml")
     script: os.path.join(config["scriptsdir"], "null_model_scattered.R")
 
+ruleorder: null_model_race > null_model
 
 
 rule null_model_loo:

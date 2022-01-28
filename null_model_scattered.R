@@ -29,7 +29,7 @@ get_covars <- function (clinical_table, index) {
   all_covar_combinations[[index]]
 }
 
-generate_null_model <- function(scan_annot, pcrel_path, covars, sample.id) {
+generate_null_model <- function(endpoint, scan_annot, pcrel_path, covars, sample.id) {
   family <- if (clinical_table %>% filter(.[[endpoint]] != 0 & .[[endpoint]] != 1) %>% tally > 0) "gaussian" else "binomial"
 
   pcrel_result <- readRDS(pcrel_path)
@@ -40,15 +40,15 @@ generate_null_model <- function(scan_annot, pcrel_path, covars, sample.id) {
                             sample.id=sample.id, cov.mat=grm, family=family)
       model$covars <- covars
       model
-  }, error=function(cnd) list(error=cnd$message, converged=FALSE))
+  }, error=function(cond) list(error=cond$message, converged=FALSE))
 }
 
 clinical_table <- load_clinical_table(snakemake@input[[1]])
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
 covars <- get_covars(clinical_table, snakemake@wildcards[["index"]])
 sample.id <- tryCatch(read_tsv(snakemake@input[["indiv_list"]])[[1]],
-                      error=function() { getScanID(scan_annot) })
-nullmod <- generate_null_model(scan_annot, snakemake@input[[2]], covars, sample.id)
+                      error=function(cond) { getScanID(scan_annot) })
+nullmod <- generate_null_model(snakemake@wildcards[["phenotype_untagged"]], scan_annot, snakemake@input[[2]], covars, sample.id)
 
 saveRDS(nullmod, snakemake@output[[1]])
 
