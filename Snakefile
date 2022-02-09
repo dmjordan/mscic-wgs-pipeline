@@ -1246,20 +1246,22 @@ ruleorder: imputed_null_model_wgs_subset > gather_null_model
 
 rule run_gwas:
     input:
-        gds=f"{GWAS_STEM}.shards.seq.gds",
+        gds_shard=f"{GWAS_STEM}.shards.seq.gds/part-{{index:05}}.seq.gds",
         null_model=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}{{phenotype_suffix}}.null.RDS"
     output:
-        txt="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.txt"
+        txt="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt"
     resources:
-        cpus=128,
-        mem_mb=16000
-    params:
-        script_path=os.path.join(config["scriptsdir"], "mpi_genesis_gwas.R")
-    shell:
-        """
-        ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {SAMPLE_MATCHED_STEM} {wildcards.phenotype_untagged}{wildcards.phenotype_suffix}
-        """
+        mem_mb=20000
+    conda: os.path.join(config["scriptsdir"],"env","genesis-seqarray.yaml")
+    script: os.path.join(config["scriptsdir"], "run_gwas_scattered.R")
+
+
+rule gather_gwas:
+    input:
+        assoc_shards=expand("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt", index=range(1000), allow_missing=True)
+    output:
+        assoc="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.txt"
+    shell: "awk 'FNR > 0 || NR == FNR' {input} > {output}"
 
 rule run_imputed_gwas:
     input:

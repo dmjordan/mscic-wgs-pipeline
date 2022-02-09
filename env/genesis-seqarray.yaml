@@ -6,4 +6,5 @@ channels:
 dependencies:
   - r-tidyverse
   - bioconductor-seqarray
+  - bioconductor-seqvartools
   - bioconductor-genesis
