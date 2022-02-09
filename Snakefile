@@ -368,7 +368,8 @@ rule mt2vcfshards:
         mt="{prefix}.mt",
         vcf=original_vcf
     output:
-        shards_dir=directory("{prefix}.shards.vcf.bgz")
+        shards_dir=directory("{prefix}.shards.vcf.bgz"),
+        shards_files=expand("{prefix}.shards.vcf.bgz/part-{index:05}.bgz", index=range(1000), allow_missing=True)
     params:
         hail_cmd="convert-mt-to-vcf-shards"
     resources:
@@ -391,19 +392,13 @@ rule build_vcf:
 
 rule vcf2seqgds_shards:
     input:
-        shards_dir="{prefix}.shards.vcf.bgz"
+        "{prefix}.shards.vcf.bgz/part-{index}.bgz"
     output:
-        shards_dir=directory("{prefix}.shards.seq.gds")
+        "{prefix}.shards.seq.gds/part-{index}.seq.gds"
     resources:
-        mem_mb=16000,
-        cpus=128
-    params:
-        script_path=os.path.join(config["scriptsdir"], "mpi_vcf2gds.R")
-    shell:
-        """
-        ml openmpi
-        mpirun --mca mpi_warn_on_fork 0 Rscript {params.script_path} {input.shards_dir}
-        """
+        mem_mb=16000
+    conda:  os.path.join(config["scriptsdir"], "env", "genesis-seqarray.yaml")
+    script: os.path.join(config["scriptsdir"], "vcf2gds_scattered.R")
 
 rule vcf2seqgds_single:
     input:
@@ -1246,7 +1241,7 @@ ruleorder: imputed_null_model_wgs_subset > gather_null_model
 
 rule run_gwas:
     input:
-        gds_shard=f"{GWAS_STEM}.shards.seq.gds/part-{{index:05}}.seq.gds",
+        gds_shard=f"{GWAS_STEM}.shards.seq.gds/part-{{index}}.seq.gds",
         null_model=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}{{phenotype_suffix}}.null.RDS"
     output:
         txt="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt"
@@ -1258,7 +1253,7 @@ rule run_gwas:
 
 rule gather_gwas:
     input:
-        assoc_shards=expand("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt", index=range(1000), allow_missing=True)
+        assoc_shards=expand("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index:05}.txt", index=range(1000), allow_missing=True)
     output:
         assoc="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.txt"
     shell: "awk 'FNR > 0 || NR == FNR' {input} > {output}"
