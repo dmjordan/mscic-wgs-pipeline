@@ -409,6 +409,8 @@ rule vcf2seqgds_single:
         cpus=64
     script: os.path.join(config["scriptsdir"], "seqvcf2gds.R")
 
+ruleorder: vcf2seqgds_shards > vcf2seqgds_single
+
 # qc steps
 
 rule qc:
@@ -1244,11 +1246,11 @@ rule run_gwas:
         gds_shard=f"{GWAS_STEM}.shards.seq.gds/part-{{index}}.seq.gds",
         null_model=f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}{{phenotype_suffix}}.null.RDS"
     output:
-        txt="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt"
+        txt=temp("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt")
     resources:
         mem_mb=20000
     conda: os.path.join(config["scriptsdir"],"env","genesis-seqarray.yaml")
-    script: os.path.join(config["scriptsdir"], "run_gwas_scattered.R")
+    script: os.path.join(config["scriptsdir"], "genesis_gwas_scattered.R")
 
 
 rule gather_gwas:
