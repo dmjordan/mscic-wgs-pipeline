@@ -1077,7 +1077,7 @@ rule regenie_step2_merge_chroms:
 
 rule gather_null_model:
     input:
-        expand("{prefix}.null.{index}.RDS", index=range(1, 11254), allow_missing=True)
+        expand("{prefix}.null.chunk_{index}.RDS", index=range(1, 662), allow_missing=True)
     resources:
         mem_mb=64000
     output:
@@ -1085,12 +1085,25 @@ rule gather_null_model:
     conda: os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
     script: os.path.join(config["scriptsdir"], "gather_null_model.R")
 
+rule gather_null_model_chunk:
+    input:
+        lambda wildcards: [f"{wildcards.prefix}.null.{index}.RDS" for index in
+                           range(int(wildcards.chunk_index) * 17, (int(wildcards.chunk_index) + 1) * 17)]
+    resources:
+        mem_mb=64000
+    output:
+        "{prefix}.null.chunk_{chunk_index}.RDS"
+    conda: os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
+    script: os.path.join(config["scriptsdir"], "gather_null_model.R")
+
+
 rule null_model:
     input:
         DESIGN_MATRIX,
         rds=f"{SAMPLE_MATCHED_STEM}.PCRelate.RDS"
     output:
         rds=temp(f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.{{index}}.RDS")
+    group: "null_model"
     resources:
         mem_mb=20000
     conda: os.path.join(config["scriptsdir"],"env","genesis-gwastools.yaml")
