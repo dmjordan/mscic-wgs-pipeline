@@ -320,8 +320,9 @@ rule mt2plink:
         multiext("{prefix}", ".bed", ".bim", ".fam")
     params:
         hail_cmd="convert-mt-to-plink"
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     resources:
-        cpus=32,
+        cpus=4,
         mem_mb=12000,
         single_host=1
     script: os.path.join(config["scriptsdir"],"lsf_hail_wrapper.py")
@@ -333,7 +334,9 @@ rule plink2snpgds:
         gds="{prefix}.snp.gds"
     params:
         genesis_cmd="plink2snpgds"
-    script: os.path.join(config["scriptsdir"],"seqarray_genesis.R")
+    conda:
+        os.path.join(config["scriptsdir"], "env", "genesis-gwastools.yaml")
+    script: os.path.join(config["scriptsdir"],"plink2snpgds.R")
 
 rule mt2bgen:
     input:
@@ -548,6 +551,8 @@ rule race_prediction:
     output:
         expand("{race}.indiv_list.txt", race=["WHITE", "BLACK", "HISPANIC", "ASIAN"]),
         table=f"{SAMPLE_MATCHED_STEM}.race_and_PCA.csv"
+    conda:
+        os.path.join(config["scriptsdir"], "env", "sklearn.yaml")
     script: os.path.join(config["scriptsdir"], "race_prediction.py")
 
 rule pop_list:
@@ -564,6 +569,7 @@ rule split_races:
     params:
         hail_cmd="subset-mt-samples",
         pass_output=True
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     resources:
         cpus=128,
         mem_mb=12000
@@ -575,6 +581,8 @@ rule pcrelate:
         gds="{prefix}.GWAS_filtered.LD_pruned.snp.gds"
     output:
         rds="{prefix}.PCRelate.RDS"
+    resources:
+        mem_mb=100000
     conda:
         os.path.join(config["scriptsdir"], "env", "genesis-gwastools.yaml")
     script: os.path.join(config["scriptsdir"],"pcrelate.R")
@@ -786,6 +794,7 @@ rule chrom_merge:
     params:
         hail_cmd="merge-chromosomes",
         pass_output=True
+    conda: os.path.join(config["scriptsdir"], "env", "hail.yaml")
     script: os.path.join(config["scriptsdir"], "lsf_hail_wrapper.py")
 
 ruleorder: chrom_merge > imputed_match_samples > biome_match_samples
@@ -808,6 +817,7 @@ rule design_matrix:
         bvl="MSCIC_blood_viral_load_predictions.csv"
     output:
         DESIGN_MATRIX
+    conda: os.path.join(config["scriptsdir"], "env", "scipy.yaml")
     script:
         os.path.join(config["scriptsdir"], "build_design_matrix.py")
 
@@ -1069,7 +1079,7 @@ rule gather_null_model:
     input:
         expand("{prefix}.null.{index}.RDS", index=range(1, 11254), allow_missing=True)
     resources:
-        mem_mb=20000
+        mem_mb=64000
     output:
         "{prefix}.null.RDS"
     conda: os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
@@ -1379,9 +1389,10 @@ rule locuszoom_format:
         "{phenotype}.GENESIS.assoc.txt"
     output:
         multiext("{phenotype}.GENESIS.assoc.for_locuszoom", ".txt.bgz", ".txt.bgz.tbi")
+    conda:
+        os.path.join(config["scriptsdir"], "env", "htslib.yaml")
     shell: 
-        """ml htslib
-        awk -v OFS='\t' '(NR == 1) {{print "#CHR", "POS", "FREQ", "REF", "ALT", "PVAL", "BETA", "SE"}} (NR > 1) {{print $2, $3, $6, $16, $15, $11, $12, $13}}' {input[0]} | \\
+        """awk -v OFS='\t' '(NR == 1) {{print "#CHR", "POS", "FREQ", "REF", "ALT", "PVAL", "BETA", "SE"}} (NR > 1) {{print $2, $3, $6, $16, $15, $11, $12, $13}}' {input[0]} | \\
         bgzip -c > {output[0]}
         tabix -s 1 -b 2 -e 2 {output[0]}
         """

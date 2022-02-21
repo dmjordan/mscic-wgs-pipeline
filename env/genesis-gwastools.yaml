@@ -6,4 +6,5 @@ channels:
 dependencies:
   - r-tidyverse
   - bioconductor-gwastools
+  - bioconductor-snprelate
   - bioconductor-genesis

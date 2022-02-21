@@ -5,6 +5,7 @@ library(magrittr)
 library(purrr)
 library(stringr)
 library(readr)
+library(dplyr)
 
 run_pcair <- function(gdsfile, kingfile, out_prefix) {
     rdsfile <- paste(out_prefix, "PCAir", "RDS", sep=".")

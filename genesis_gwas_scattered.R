@@ -4,6 +4,7 @@ library(GENESIS, quietly=TRUE, warn.conflicts=FALSE)
 library(tibble, quietly=TRUE, warn.conflicts=FALSE)
 library(dplyr, quietly=TRUE, warn.conflicts=FALSE)
 library(fs, quietly=TRUE, warn.conflicts=FALSE)
+library(readr, quietly=TRUE, warn.conflicts=FALSE)
 
 doGwasShard <- function (seqFile, nullmod) {
     seqData <- SeqVarData(seqFile)
@@ -17,7 +18,7 @@ doGwasShard <- function (seqFile, nullmod) {
                       effect.allele=altChar(seqData),
                       other.allele=refChar(seqData))
     assoc_df <- left_join(assoc_df, alleles)
-    if (nullmod$family$family == "binomial") {
+    if (nullmod$model$family$family == "binomial") {
         # calculate cases and controls
         seqSetFilter(seqData, variant.id=assoc_df$variant.id,
                      sample.id=row.names(nullmod$outcome)[nullmod$outcome == 0])
@@ -32,7 +33,7 @@ doGwasShard <- function (seqFile, nullmod) {
 
 seqFile <- seqOpen(snakemake@input[["gds_shard"]])
 
-if (length(seqGetData(seqFile, "variant.id")) > 0) {
+if (length(seqGetData(seqFile, "variant.id")) == 0) {
     file_touch(snakemake@output[[1]])
 } else {
     nullmod <- readRDS(snakemake@input[["null_model"]])

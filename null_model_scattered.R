@@ -34,6 +34,7 @@ generate_null_model <- function(endpoint, scan_annot, pcrel_path, covars, sample
 
   pcrel_result <- readRDS(pcrel_path)
   grm <- pcrelateToMatrix(pcrel_result)
+  sample.id <- intersect(sample.id, rownames(grm))
   tryCatch({
       model <- fitNullModel(scan_annot, outcome=endpoint,
                             covars=covars,
@@ -49,6 +50,14 @@ covars <- get_covars(clinical_table, snakemake@wildcards[["index"]])
 sample.id <- tryCatch(read_tsv(snakemake@input[["indiv_list"]])[[1]],
                       error=function(cond) { getScanID(scan_annot) })
 nullmod <- generate_null_model(snakemake@wildcards[["phenotype_untagged"]], scan_annot, snakemake@input[[2]], covars, sample.id)
+
+if (nullmod$converged) { 
+    cat("succeeded\n")
+} else if (nullmod$error) {
+    cat("failed with error:", nullmod$error, "\n")
+} else {
+    cat("failed to converge\n")
+}
 
 saveRDS(nullmod, snakemake@output[[1]])
 
