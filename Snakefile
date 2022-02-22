@@ -1078,7 +1078,7 @@ rule regenie_step2_merge_chroms:
 
 rule gather_null_model:
     input:
-        expand("{prefix}.null.chunk_{index}.RDS", index=range(1, 663), allow_missing=True)
+        expand("{prefix}.null.chunk_{index}.RDS", index=range(1, 94), allow_missing=True)
     resources:
         mem_mb=64000,
         time_min=60
@@ -1090,7 +1090,7 @@ rule gather_null_model:
 rule gather_null_model_chunk:
     input:
         lambda wildcards: temp([f"{wildcards.prefix}.null.{index}.RDS" for index in
-                               range((int(wildcards.index) - 1) * 17, int(wildcards.index) * 17)])
+                               range((int(wildcards.index) - 1) * 11 + 1, int(wildcards.index) * 11 + 1)])
     group: "null_model"
     resources:
         time_min=60

@@ -2,14 +2,12 @@ suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(GWASTools))
 suppressPackageStartupMessages(library(GENESIS))
 
-race <- c("WHITE", "BLACK", "HISPANIC", "ASIAN")
-
 load_clinical_table <- function(dmatrix_path) {
   read_csv(dmatrix_path) %>%
     rename(scanID=Subject_ID) %>% mutate(race_factor = factor(race_factor))
 }
 
-get_covars <- function (clinical_table, index) {
+get_covars <- function (clinical_table, index, race) {
 
   clinical_table %>% names %>% str_subset("^flowcell") %>% list %>%
     append(list("age",
@@ -21,10 +19,10 @@ get_covars <- function (clinical_table, index) {
                 "race_factor",
                 "multi_batch",
                 "any_comorbidity")) -> non_pc_covars
-
-  map(1:10, ~paste0(race, "_pc", 1:.x)) %>% prepend(list(character())) -> pcs
+  pcs <- paste0("pc", 1:10)
+  if (!is.null(race)) { pcs <- paste(tolower(race), pcs, sep="_") }
   map(1:length(non_pc_covars), ~ combn(non_pc_covars, .x, simplify=FALSE)) %>%
-    flatten %>% cross2(pcs) %>% map(unlist) -> all_covar_combinations
+  flatten %>% map(unlist) %>% map(~ c(.x, pcs)) -> all_covar_combinations
 
   all_covar_combinations[[index]]
 }
@@ -46,7 +44,7 @@ generate_null_model <- function(endpoint, scan_annot, pcrel_path, covars, sample
 
 clinical_table <- load_clinical_table(snakemake@input[[1]])
 scan_annot <- ScanAnnotationDataFrame(as.data.frame(clinical_table))  # somehow GWASTools doesn't recognize tibble columns?
-covars <- get_covars(clinical_table, snakemake@wildcards[["index"]])
+covars <- get_covars(clinical_table, as.integer(snakemake@wildcards[["index"]]), snakemake@wildcards[["race"]])
 sample.id <- tryCatch(read_tsv(snakemake@input[["indiv_list"]])[[1]],
                       error=function(cond) { getScanID(scan_annot) })
 nullmod <- generate_null_model(snakemake@wildcards[["phenotype_untagged"]], scan_annot, snakemake@input[[2]], covars, sample.id)
