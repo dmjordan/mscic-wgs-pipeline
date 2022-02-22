@@ -6,7 +6,12 @@ from snakemake.utils import read_job_properties
 jobscript = sys.argv[1]
 job_properties = read_job_properties(jobscript)
 
-bsub_cmd = "bsub -q {resources[queue]} -P acc_{resources[project]} -W {resources[time_min]} -n {resources[cpus]} -R rusage[mem={resources[mem_mb]}] -oo {rule}.%J.log".format_map(job_properties)
+if job_properties['type'] == "group":
+    job_properties['rulename'] = job_properties['groupid']
+else:
+    job_properties['rulename'] = job_properties['rule']
+
+bsub_cmd = "bsub -q {resources[queue]} -P acc_{resources[project]} -W {resources[time_min]} -n {resources[cpus]} -R rusage[mem={resources[mem_mb]}] -oo {rulename}.%J.log".format_map(job_properties)
 if job_properties['resources'].get("single_host", 0) == 1:
     bsub_cmd += " -R span[hosts=1]"
 if job_properties['resources'].get('host') is not None:

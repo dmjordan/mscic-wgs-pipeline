@@ -88,7 +88,8 @@ wildcard_constraints:
     phenotype_untagged=r"(?!_)[a-z0-9_]+(?<!_)",
     phenotype_suffix="(_[A-Z_]+)?",
     tissue="|".join(ALL_TISSUES),
-    prefix=".*(?<!shards)"
+    prefix=".*(?<!shards)",
+    index="[0-9]+"
 
 
 # aggregation rules
@@ -1077,9 +1078,10 @@ rule regenie_step2_merge_chroms:
 
 rule gather_null_model:
     input:
-        expand("{prefix}.null.chunk_{index}.RDS", index=range(1, 662), allow_missing=True)
+        expand("{prefix}.null.chunk_{index}.RDS", index=range(1, 663), allow_missing=True)
     resources:
-        mem_mb=64000
+        mem_mb=64000,
+        time_min=60
     output:
         "{prefix}.null.RDS"
     conda: os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
@@ -1087,12 +1089,13 @@ rule gather_null_model:
 
 rule gather_null_model_chunk:
     input:
-        lambda wildcards: [f"{wildcards.prefix}.null.{index}.RDS" for index in
-                           range(int(wildcards.chunk_index) * 17, (int(wildcards.chunk_index) + 1) * 17)]
+        lambda wildcards: temp([f"{wildcards.prefix}.null.{index}.RDS" for index in
+                               range((int(wildcards.index) - 1) * 17, int(wildcards.index) * 17)])
+    group: "null_model"
     resources:
-        mem_mb=64000
+        time_min=60
     output:
-        "{prefix}.null.chunk_{chunk_index}.RDS"
+        "{prefix}.null.chunk_{index}.RDS"
     conda: os.path.join(config["scriptsdir"], "env", "tidyverse.yaml")
     script: os.path.join(config["scriptsdir"], "gather_null_model.R")
 
@@ -1105,7 +1108,7 @@ rule null_model:
         rds=temp(f"{SAMPLE_MATCHED_STEM}.{{phenotype_untagged}}.null.{{index}}.RDS")
     group: "null_model"
     resources:
-        mem_mb=20000
+        time_min=60
     conda: os.path.join(config["scriptsdir"],"env","genesis-gwastools.yaml")
     script: os.path.join(config["scriptsdir"], "null_model_scattered.R")
 
