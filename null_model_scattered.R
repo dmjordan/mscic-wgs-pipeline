@@ -51,7 +51,7 @@ nullmod <- generate_null_model(snakemake@wildcards[["phenotype_untagged"]], scan
 
 if (nullmod$converged) { 
     cat("succeeded\n")
-} else if (nullmod$error) {
+} else if (!is.null(nullmod$error)) {
     cat("failed with error:", nullmod$error, "\n")
 } else {
     cat("failed to converge\n")
