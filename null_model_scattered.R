@@ -28,7 +28,7 @@ get_covars <- function (clinical_table, index, race) {
 }
 
 generate_null_model <- function(endpoint, scan_annot, pcrel_path, covars, sample.id) {
-  family <- if (clinical_table %>% filter(.[[endpoint]] != 0 & .[[endpoint]] != 1) %>% tally > 0) "gaussian" else "binomial"
+  family <- if (pData(scan_annot) %>% filter(.[[endpoint]] != 0 & .[[endpoint]] != 1) %>% tally > 0) "gaussian" else "binomial"
 
   pcrel_result <- readRDS(pcrel_path)
   grm <- pcrelateToMatrix(pcrel_result)
