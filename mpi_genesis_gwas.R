@@ -43,13 +43,13 @@ assoc <- foreach(gdsPath=gdsFiles,
                           effect.allele=altChar(seqData),
                           other.allele=refChar(seqData))
         assoc_subdf <- left_join(assoc_subdf, alleles)
-        if (nullmod$family$family == "binomial") { 
+        if (nullmod$model$family$family == "binomial") {
             # calculate cases and controls
             seqSetFilter(seqData, variant.id=assoc_subdf$variant.id, 
-                         sample.id=row.names(nullmod$outcome)[nullmod$outcome == 0])
+                         sample.id=row.names(nullmod$fit$outcome)[nullmod$fit$outcome == 0])
             n.controls <- colSums(!is.na(getGenotype(seqData)))
             seqSetFilter(seqData, variant.id=assoc_subdf$variant.id,
-                         sample.id=row.names(nullmod$outcome)[nullmod$outcome == 1])
+                         sample.id=row.names(nullmod$fit$outcome)[nullmod$fit$outcome == 1])
             n.cases <- colSums(!is.na(getGenotype(seqData)))
             assoc_subdf <- add_column(assoc_subdf, n.cases=n.cases, n.controls=n.controls)
         }
