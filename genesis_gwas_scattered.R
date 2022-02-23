@@ -21,10 +21,10 @@ doGwasShard <- function (seqFile, nullmod) {
     if (nullmod$model$family$family == "binomial") {
         # calculate cases and controls
         seqSetFilter(seqData, variant.id=assoc_df$variant.id,
-                     sample.id=row.names(nullmod$outcome)[nullmod$outcome == 0])
+                     sample.id=row.names(nullmod$fit$outcome)[nullmod$fit$outcome == 0])
         n.controls <- colSums(!is.na(getGenotype(seqData)))
         seqSetFilter(seqData, variant.id=assoc_df$variant.id,
-                     sample.id=row.names(nullmod$outcome)[nullmod$outcome == 1])
+                     sample.id=row.names(nullmod$fit$outcome)[nullmod$fit$outcome == 1])
         n.cases <- colSums(!is.na(getGenotype(seqData)))
         assoc_df <- add_column(assoc_df, n.cases=n.cases, n.controls=n.controls)
     }
