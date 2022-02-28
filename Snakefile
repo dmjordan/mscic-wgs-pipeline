@@ -1662,6 +1662,7 @@ rule coloc2_gtex:
         prefix=lambda wildcards: f"{wildcards.phenotype}.{wildcards.tissue}"
     resources:
         mem_mb=16000
+    conda: os.path.join(sconfig["scriptsdir"], "env", "coloc2.yaml" )
     script: os.path.join(config["scriptsdir"],"do_coloc2_gtex.R")
 
 rule filter_mscic_eqtl_chunks:
