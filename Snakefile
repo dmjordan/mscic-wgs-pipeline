@@ -1275,15 +1275,25 @@ rule run_gwas:
         txt=temp("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index}.txt")
     resources:
         mem_mb=20000
+    group: "run_gwas"
     conda: os.path.join(config["scriptsdir"],"env","genesis-seqarray.yaml")
     script: os.path.join(config["scriptsdir"], "genesis_gwas_scattered.R")
 
 
 rule gather_gwas:
     input:
-        assoc_shards=expand("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.shard_{index:05}.txt", index=range(1000), allow_missing=True)
+        assoc_chunks=expand("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.chunk_{index}.txt", index=range(100), allow_missing=True)
     output:
         assoc="{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.txt"
+    shell: "awk 'FNR > 0 || NR == FNR' {input} > {output}"
+
+
+rule gather_gwas_chunk:
+    input:
+        assoc_shards=lambda wildcards: [f"{wildcards.phenotype_untagged}{wildcards.phenotype_suffix}.GENESIS.assoc.shard_{index:05}.txt" for index in range(int(wildcards.index)*10, (int(wildcards.index)+1)*10)]
+    output:
+        assoc=temp("{phenotype_untagged}{phenotype_suffix}.GENESIS.assoc.chunk_{index}.txt")
+    group: "run_gwas"
     shell: "awk 'FNR > 0 || NR == FNR' {input} > {output}"
 
 rule run_imputed_gwas:
